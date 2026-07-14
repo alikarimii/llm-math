@@ -56,7 +56,7 @@ export function Distribution({
                     data-series="compare"
                     style={{
                       width: revealed ? `${(compare[i] / scale) * 100}%` : '0%',
-                      transition: 'width 320ms cubic-bezier(0.2, 0, 0, 1)',
+                      transition: 'width 180ms var(--ease-out)',
                     }}
                   />
                 )}
@@ -65,7 +65,7 @@ export function Distribution({
                   data-series="model"
                   style={{
                     width: revealed ? `${(p / scale) * 100}%` : '0%',
-                    transition: 'width 320ms cubic-bezier(0.2, 0, 0, 1)',
+                    transition: 'width 180ms var(--ease-out)',
                   }}
                 />
               </span>

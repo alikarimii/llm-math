@@ -190,6 +190,71 @@ describe('Distribution', () => {
     expect(container.querySelectorAll('[data-cut="true"]')).toHaveLength(2)
   })
 
+  it('scales bar widths so the largest prob is 100% and the rest are proportional', () => {
+    const { container } = render(
+      <Distribution probs={probs} labels={labels} progress={1} />
+    )
+    const bars = [...container.querySelectorAll('[data-series="model"]')] as HTMLElement[]
+    const scale = Math.max(...probs)
+    const widths = bars.map(b => parseFloat(b.style.width))
+    probs.forEach((p, i) => {
+      expect(widths[i]).toBeCloseTo((p / scale) * 100, 6)
+    })
+    expect(widths[0]).toBeCloseTo(100, 6)
+  })
+
+  it('scales by the max across BOTH series: a compare value that exceeds every model value shrinks the model bars', () => {
+    const modelProbs = [0.4, 0.3, 0.2, 0.1]
+    const compare = [0.9, 0.05, 0.03, 0.02]
+    const { container } = render(
+      <Distribution probs={modelProbs} labels={labels} progress={1} compare={compare} />
+    )
+    const scale = Math.max(...modelProbs, ...compare) // 0.9, driven by compare
+    const modelBars = [...container.querySelectorAll('[data-series="model"]')] as HTMLElement[]
+    const compareBars = [...container.querySelectorAll('[data-series="compare"]')] as HTMLElement[]
+
+    modelProbs.forEach((p, i) => {
+      expect(parseFloat(modelBars[i].style.width)).toBeCloseTo((p / scale) * 100, 6)
+    })
+    compare.forEach((c, i) => {
+      expect(parseFloat(compareBars[i].style.width)).toBeCloseTo((c / scale) * 100, 6)
+    })
+
+    // The naive bug this guards against: scaling only by `probs`, which would
+    // render the largest model bar (0.4) at 100% even though the compare
+    // series (0.9) is nearly twice as large.
+    expect(parseFloat(modelBars[0].style.width)).toBeLessThan(100)
+    expect(parseFloat(modelBars[0].style.width)).toBeCloseTo(44.444444, 4)
+  })
+
+  it('a cut bar still renders its true, non-zero width — dimming is a CSS/attribute concern, not a width of 0', () => {
+    const { container } = render(
+      <Distribution probs={probs} labels={labels} progress={1} cutoff={2} />
+    )
+    const bars = [...container.querySelectorAll('[data-series="model"]')] as HTMLElement[]
+    const scale = Math.max(...probs)
+    // Indices 2 and 3 are beyond cutoff=2, so they're flagged cut, but reveal
+    // is governed by progress (which is 1 here), not by cutoff.
+    const cutRows = container.querySelectorAll('[data-cut="true"]')
+    expect(cutRows).toHaveLength(2)
+    expect(parseFloat(bars[2].style.width)).toBeCloseTo((probs[2] / scale) * 100, 6)
+    expect(parseFloat(bars[3].style.width)).toBeCloseTo((probs[3] / scale) * 100, 6)
+    expect(parseFloat(bars[2].style.width)).toBeGreaterThan(0)
+    expect(parseFloat(bars[3].style.width)).toBeGreaterThan(0)
+  })
+
+  it('unrevealed bars render at 0% width, regardless of their probability', () => {
+    // 4 bars, progress 0.5 -> shown = round(0.5 * 4) = 2, so indices 2 and 3
+    // are not yet revealed.
+    const { container } = render(
+      <Distribution probs={probs} labels={labels} progress={0.5} />
+    )
+    const bars = [...container.querySelectorAll('[data-series="model"]')] as HTMLElement[]
+    expect(container.querySelectorAll('[data-revealed="true"]')).toHaveLength(2)
+    expect(bars[2].style.width).toBe('0%')
+    expect(bars[3].style.width).toBe('0%')
+  })
+
   it('is a pure function of progress', () => {
     expectPureInProgress(p => (
       <Distribution probs={probs} labels={labels} progress={p} />
