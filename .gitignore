@@ -1,0 +1,28 @@
+# Visual-companion mockups from brainstorming sessions
+.superpowers/
+superpowers
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Cloudflare Workers / wrangler
+.wrangler/
+
+# Python (training script)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store

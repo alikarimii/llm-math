@@ -1,0 +1,220 @@
+import { ModelSpec } from './ModelSpec'
+import { HeadPatterns } from './HeadPatterns'
+
+<header className="article-head">
+  <p className="hero-eyebrow">the instrument, not the product</p>
+  <h1 className="hero-title">The transformer we trained</h1>
+</header>
+
+<div className="lede">
+Every number on this site comes out of one small model that we trained
+ourselves. This page is that model: what it is, what it was fed, what it
+learned, and how to rebuild it from nothing in about a minute.
+</div>
+
+<ModelSpec />
+
+## Why train one at all
+
+The alternative was to make the numbers up, and it would have been much easier.
+A page teaching attention can print any plausible-looking matrix and no reader
+will ever check. That is exactly the problem: a fabricated attention pattern
+teaches the *shape* of the idea while quietly lying about the thing that makes
+attention worth teaching — that this arithmetic, run on learned weights,
+actually resolves a pronoun.
+
+The second option was to borrow a real model. But GPT-2's smallest head is 64
+numbers wide across 12 layers; you cannot put one honest matrix from it on a
+page, only a heatmap of a matrix, which is a picture of data rather than data.
+
+So the model here is sized by a single constraint: **every intermediate value in
+a forward pass must be small enough to print in full.** Six words, sixteen
+numbers each. A whole attention score matrix is six by six. You can read it.
+
+## The model, in full
+
+One attention block. No feed-forward layer, no layer norm, no second layer —
+they are all real parts of a real transformer and none of them is needed to show
+what attention does, so none of them is here.
+
+```python
+D_MODEL, N_HEADS, N_CTX = 16, 2, 6
+D_K = D_MODEL // N_HEADS  # 8
+
+def forward(self, idx):
+    B, T = idx.shape
+    x = self.embed(idx) + self.pos(torch.arange(T))     # words → vectors
+    q = self.wq(x).view(B, T, N_HEADS, D_K).transpose(1, 2)
+    k = self.wk(x).view(B, T, N_HEADS, D_K).transpose(1, 2)
+    v = self.wv(x).view(B, T, N_HEADS, D_K).transpose(1, 2)
+    scores = (q @ k.transpose(-2, -1)) / (D_K ** 0.5)   # every query × every key
+    mask = torch.tril(torch.ones(T, T)).bool()
+    scores = scores.masked_fill(~mask, float('-inf'))   # no looking forward
+    w = F.softmax(scores, dim=-1)                       # scores → a distribution
+    out = (w @ v).transpose(1, 2).contiguous().view(B, T, D_MODEL)
+    return self.unembed(x + self.wo(out))               # residual, then vocabulary
+```
+
+That is the entire thing. `d_model` is 16 and there are 2 heads, so each head
+works in 8 dimensions — the `view(B, T, N_HEADS, D_K)` is the split, and it is
+the reason the value vectors in the lesson are 8 wide while the rows that go in
+are 16 wide. The two heads run the identical arithmetic on different halves of
+the same numbers, and `wo` stitches their results back into one 16-wide row.
+
+The `x +` in the last line is the residual connection: whatever attention
+produced gets *added to* the word's original row rather than replacing it. Note
+what that makes possible — output shape equals input shape, which is precisely
+why you can stack these blocks.
+
+## The corpus is the hard part
+
+The training data is eighteen sentences. Getting to those eighteen took longer
+than everything else.
+
+```
+the cat drank water so it purred
+the dog ate bread so it barked
+the bird found food so it chirped
+the cat quickly drank water so it purred
+...
+```
+
+**The first corpus failed, and failed silently.** It read like
+*"the cat drank milk because it was thirsty"* — and the word after `because it`
+is always `was`, no matter what the subject is. So predicting the next token
+gave the model no reason whatsoever to work out what `it` referred to. It
+learned a shortcut from the verb (`drank` → `thirsty`) and never looked at the
+subject at all. The attention pattern was real, honestly rendered, and taught
+nothing.
+
+Every design choice above exists to close a shortcut:
+
+**Subjects share their verbs and objects.** `cat`, `dog` and `bird` all drink
+water, eat bread and find food. The only word in the sentence that predicts the
+final one — `purred` / `barked` / `chirped` — is the subject. Attention back to
+the subject is not the model's best route to a low loss; it is the model's
+*only* route.
+
+**Half the sentences insert `quickly`.** This is a control, not filler. Without
+it, the subject always sits at position 1, so *"attend to the subject"* and
+*"attend to position 1"* would produce identical predictions and we could never
+tell which one the model learned. The adverb shifts the subject to a different
+slot. A model that survives both is tracking the word, not the seat.
+
+<Aside kind="deep" title="Eighteen sentences make only twenty-seven training examples">
+The context is six tokens, so a seven-word sentence yields exactly one training
+window (`the dog drank water so it` → `dog drank water so it barked`), and an
+eight-word `quickly` sentence yields two. Nine of each gives 27 windows total.
+The model sees them over and over — batches of 16 sampled with replacement,
+6,000 times.
+
+It is worth being blunt about what that means: this model is not learning
+language, it is learning eighteen sentences by heart. That is fine, and it is
+even the point. The question this site asks is not *"can a transformer
+generalise?"* but *"what does the attention arithmetic actually do when it
+works?"* — and for that you want a model that has solved its problem cleanly,
+not one that is still half-confused.
+</Aside>
+
+## The training loop
+
+Ordinary next-token prediction. Nothing here is specialised or clever:
+
+```python
+model = TinyAttention(len(words))
+opt = torch.optim.AdamW(model.parameters(), lr=3e-3)
+
+for step in range(6000):
+    xb, yb = zip(*random.choices(data, k=16))     # batch of 16 windows
+    logits = model(torch.tensor(xb))
+    loss = F.cross_entropy(
+        logits.view(-1, logits.size(-1)), torch.tensor(yb).reshape(-1))
+    opt.zero_grad(); loss.backward(); opt.step()
+```
+
+Each window asks the model to predict every token from the ones before it, and
+cross-entropy scores how surprised it was by the right answer. The gradient of
+that surprise flows back through the softmax, through the scores, and into `wq`
+and `wk` — which is to say: **the attention pattern is not designed, it is a
+by-product of being wrong about the last word too many times.** Nothing in the
+loss function mentions attention. Nobody told it to look at the subject.
+
+The seed is fixed at 1337, so this is reproducible: the weights in this repo are
+the weights you get.
+
+## What it learned
+
+Here are the two heads, on `the dog drank water so it`. These are live — read
+off a forward pass at build time, not transcribed.
+
+<HeadPatterns />
+
+The division of labour was never asked for. There is no loss term for "one of
+you should find the subject and the other should hold onto the current word";
+that split is just what two heads and 6,000 steps of being wrong produced.
+
+<Aside kind="deep" title="One word cheats, and we left it in">
+Softmax must sum to one. A row of attention has to spend all of its mass
+somewhere, even when the honest answer is *"I have nothing to look at."* The
+escape hatch every model finds is to dump the leftover mass on a token that
+doesn't matter — usually itself. It's called an attention sink.
+
+Our model has one. Try `the cat drank water so it` in the playground at the end
+of [the lesson](/attention): head 0 sends `it` to *itself* with weight 0.9997,
+and to `cat` with 0.0003. It still predicts `purred` correctly — it encoded
+"cat" as *the absence of a signal*, which works because there are only three
+subjects and one of them can afford to be the default.
+
+We could have hidden this by demoing on a sentence where it doesn't happen. We
+demo on `dog` — where head 0 genuinely locks onto the subject — and then show
+you the `cat` case anyway, because the sink is not a bug in our model. It is a
+real, structural property of softmax attention, and you will meet it again in
+models a million times this size.
+</Aside>
+
+## Getting the numbers into the browser
+
+The model is trained in PyTorch. The site is TypeScript. So there are two
+implementations of the same forward pass, and the entire credibility of this
+project rests on their agreeing.
+
+Two guards keep them honest.
+
+**A drift guard, at export time.** `export.py` re-implements the forward pass by
+hand, because it needs to capture the intermediate tensors that `model.forward()`
+throws away — and duplicated arithmetic is arithmetic that will eventually
+diverge. So before writing a single byte, it runs both versions on the same
+prompt and compares:
+
+```python
+if not torch.allclose(real_logits, manual_logits, atol=1e-6, rtol=1e-5):
+    raise RuntimeError("DRIFT DETECTED: ...")
+```
+
+If the two ever disagree, nothing is written. A stale `weights.json` that
+*looks* fine is the worst outcome available to a project like this, and this
+assertion is what makes it impossible.
+
+**A fixture test, in CI.** The export also writes `fixtures.json`: every
+intermediate tensor from the real PyTorch run. The TypeScript `forward()` is
+tested against it, cell by cell, to a tolerance of 1e-4. If a refactor in the
+browser code changes a single number, the test fails and the site does not ship.
+
+That is the whole guarantee. Every matrix you scroll past on this site is a
+number PyTorch produced, checked twice.
+
+## Run it yourself
+
+```bash
+pip install -r train/requirements.txt   # torch, and nothing else
+python train/train.py                   # ~1 minute on a laptop CPU
+python train/export.py                  # writes public/model/{weights,fixtures}.json
+npx vitest run                           # the TS forward pass must match the fixtures
+```
+
+`train.py` prints its loss every 500 steps and saves `model.pt`. `export.py`
+prints what each head does with `it` before it exports anything, which is the
+real acceptance test — a loss number tells you the model fit its data, but only
+the attention row tells you it fit it *for the right reason*.
+
+Then go and watch it work: [how a word decides what to look at](/attention).

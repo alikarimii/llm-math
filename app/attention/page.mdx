@@ -1,0 +1,241 @@
+import { AttentionScrollStage } from './AttentionScrollStage'
+import { Playground } from './Playground'
+import { LessonHero } from './LessonHero'
+
+<LessonHero />
+
+<div className="lede">
+The sentence is *the dog drank water so it* — and by the end of this page
+you will have watched, number by number, how the model decides that **it**
+refers to **dog**. Every value on this page comes from a forward pass
+through a transformer we trained ourselves. Nothing is staged for effect.
+</div>
+
+<AttentionScrollStage>
+
+<Step label="X = E + P">
+## A sentence becomes numbers
+
+Six words go in. The model doesn't see words — it sees six rows of sixteen
+numbers each, one row per word, short enough that you can read a whole row
+at a glance. Each row starts as a fixed embedding for that word, and a
+second fixed vector for *where* the word sits in the sentence is added on
+top, so `dog` in position two ends up as a slightly different row than `dog`
+would be in position five.
+
+<Aside kind="primer" title="What is a vector, really?">
+Strip away the geometry and a vector is just an ordered list of numbers —
+here, sixteen of them. "Sixteen-dimensional" sounds exotic, but you already
+know how to read a list of sixteen numbers; the word just gives the list
+a job.
+</Aside>
+</Step>
+
+<Step label="Q, K, V = X·W">
+## The same word, asked three different questions
+
+Each of those rows gets multiplied by three different matrices —
+<Equation tex="W_Q" />, <Equation tex="W_K" />, and <Equation tex="W_V" /> —
+producing three new vectors per word: a **query**, a **key**, and a
+**value**. Same sixteen input numbers, three different lenses on them.
+
+The query is the word asking a question: *what am I looking for?* The key
+is the word's answer to everyone else's question: *what do I offer?* The
+value is what the word actually hands over once it's been found: *what I'll
+pass on.* A word never compares its query to its own key on equal footing
+with anyone else's — every word asks, and every word answers, at once.
+
+Each of those matrices is sixteen by sixteen, so each still hands back
+sixteen numbers per word. But those sixteen are then cut cleanly in half.
+This model runs **two heads**, and each head is given its own
+eight-number slice of every query, key, and value — the first head takes
+the first eight components, the second head takes the last eight. So from
+here on, every vector you see is **eight** numbers long, not sixteen, and
+everything that follows happens inside the first of the two heads: the one
+that learned to resolve the pronoun.
+
+<Aside kind="primer" title="Why cut the vector into heads at all?">
+A single head can only learn one notion of *relevant*, because it has only
+one query-key comparison to spend. Splitting the sixteen dimensions into
+two independent eight-dimensional slices buys a second, entirely separate
+notion of relevance for the same arithmetic — the two heads look for
+different things, at once, and neither can see the other's dimensions. The
+width of a head is written <Equation tex="d_k" />, and here
+<Equation tex="d_k = 16 / 2 = 8" />.
+</Aside>
+</Step>
+
+<Step label="q · k">
+## One query meets one key
+
+Here is the only arithmetic on this page you could do yourself, with a
+pencil, in under a minute. The word **it** is holding out its query, looking
+for whatever might be its antecedent. The word **dog** is holding out its
+key, offering itself as a candidate. To find out how well they match, you
+multiply the two vectors element by element and add up the results — eight
+products, one sum.
+
+<Aside kind="primer" title="Why does a dot product measure similarity?">
+Multiply two vectors' matching components and add up the results, and the
+total is largest when the vectors point in the same direction, zero when
+they're at right angles, and negative when they point apart. A dot product
+is, quite literally, a measurement of how much two vectors agree.
+</Aside>
+</Step>
+
+<Step label="QKᵀ">
+## Every query, every key
+
+The model doesn't only compare **it** to **dog** — it compares every word's
+query to every word's key, six against six, thirty-six dot products in this
+head. The result is a square grid of raw scores: entry *(i, j)* says how
+strongly word *i*'s query matches word *j*'s key, before anything has been
+decided.
+</Step>
+
+<Step label="÷ √dₖ">
+## Divide by the square root of the dimension
+
+<Equation tex="\frac{QK^\top}{\sqrt{d_k}}" display />
+
+Every score in the grid is divided by the same number: the square root of
+the key dimension. On its own this step looks like housekeeping, but skip
+it and the next step — softmax — stops behaving the way you'd expect.
+
+<Aside kind="deep" title="Why √dₖ and not dₖ, or nothing at all?">
+Suppose the components of a query and a key vector are each independent,
+with mean zero and variance one — a reasonable approximation once a model
+is trained. Their dot product sums <Equation tex="d_k" /> such
+products, and because the terms are independent, variances add: the dot
+product itself ends up with variance <Equation tex="d_k" />, not 1.
+
+That matters because softmax is not scale-invariant. Feed it scores with
+variance 1 and it produces a fairly soft distribution; feed it the same
+scores stretched out by a growing variance and it saturates, collapsing
+almost all its mass onto whichever entry happened to be largest — a fact
+about softmax you'll see demonstrated directly in the first playground
+below. Dividing by <Equation tex="\sqrt{d_k}" /> exactly cancels the
+variance growth, so the distribution softmax sees stays roughly the same
+shape whether the model's key dimension is 8 or 8,000.
+</Aside>
+</Step>
+
+<Step label="softmax">
+## Softmax turns scores into a distribution
+
+Softmax exponentiates every score in a row and divides each by the row's
+total, so the row stops being an arbitrary list of numbers and becomes a
+proper distribution — non-negative, summing to one. Look at the row for
+**it**: essentially all of its mass sits on **dog**.
+
+We didn't arrange that. It's what training produced, and given the training
+data, it's close to the only thing training *could* produce: every subject
+in that data goes on to share the same verbs and objects, so the only
+reliable signal for resolving a pronoun is to look back at the noun that
+introduced it.
+
+<Aside kind="deep" title="Now try `cat` in the playground below — and watch it cheat.">
+Change the subject to **cat** and the word **it** attends to *itself*, not
+to **cat**. This is not a bug, and no amount of additional training fixes
+it.
+
+Softmax forces every row to sum to 1, and "put all my mass on myself" is a
+*free* code: the value vector at **it** is the same constant in every
+sentence, so the layers downstream can simply learn to read that constant
+as *purred*. That means the model needs only **two** informative attention
+targets to distinguish **three** subjects — one subject can always freeload
+on self-attention instead of being looked up at all. In this model, that
+freeloader happens to be **cat**.
+
+Real large language models do exactly this, at far greater scale: it is the
+mechanism behind *attention sinks*, where a disproportionate share of
+attention parks on the first token of a sequence, a token that carries
+essentially no information. You are looking at the same phenomenon here, in a
+model of two heads and sixteen numbers per word, where it's small enough to
+catch in the act.
+</Aside>
+</Step>
+
+<Step label="A">
+## Every word, all at once
+
+**it** is not special. Every word in the sentence holds out a query, every
+word's row of scores is scaled, masked, and softmaxed the same way, and the
+six rows stack into one grid — the whole attention pattern of this head, on
+this sentence, in one picture.
+
+Watch it fill in, a row at a time. Each row is one word's distribution over
+what it may look at: the darker the cell, the more of that word's attention
+sits there. The staircase along the diagonal is the causal mask made
+visible — the first word may attend only to itself, and each word after it
+gains exactly one more thing it is allowed to look back at. Nothing may look
+forward.
+
+The last row is the one we came for. **it** spends almost all of its
+attention on **dog** — and almost none on any of the five other positions
+the mask leaves open to it, itself included. That single row is the model
+resolving a pronoun — and every number in it is one you have now watched
+being built.
+</Step>
+
+<Step label="A·V → + x">
+## Weighted sum, and we're back where we started
+
+A row of weights on its own changes nothing; it has to be spent. Each word's
+output is the weighted average of every word's **value** vector, using the row
+you just watched form as the weights. The row for **it** puts nearly all its
+weight on **dog**, so the value vector **dog** hands over is very nearly the
+whole of what **it** walks away with — the highlighted row above is the one
+being copied.
+
+A weighted average of eight-dimensional value vectors is itself
+eight-dimensional, so what this head produces is six rows of **eight** numbers —
+the shape of the value matrix above it, not of the embeddings we started from.
+Getting back to sixteen takes three more moves. The second head has been
+computing its own eight numbers per word all along, so the two heads'
+outputs are **concatenated** back into sixteen. That sixteen is mixed by one
+more matrix, <Equation tex="W_O" />, which lets what one head found inform every
+dimension of the result. And the mixed row is **added** onto the row the word
+arrived with — the residual connection.
+
+Only now is the shape restored: six rows of sixteen numbers, exactly the
+embeddings this page opened with. That's not a coincidence, and it isn't
+free — it is bought by the concatenation and by <Equation tex="W_O" /> being
+square. It's the entire reason attention blocks can be stacked one after
+another, dozens deep, each one reading the previous block's output as if it
+were a fresh set of embeddings.
+</Step>
+
+</AttentionScrollStage>
+
+## Try breaking it
+
+Turn off the divisor and watch the same grid you just built sharpen into
+something closer to a spotlight than a distribution — the collapse the aside
+above predicted, happening in front of you.
+
+<Playground mode="scaling" />
+
+## Try changing the sentence
+
+Swap any word for another the model knows, including the subject. Watch
+which word **it** decides to attend to, and, if you swap in **cat**,
+watch it attend to itself instead.
+
+<Playground mode="sentence" />
+
+<Aside kind="deep" title="This was one head of two, eight numbers wide. Real models run twelve or more, sixty-four wide.">
+Every figure on this page was drawn from the first of this model's two heads,
+which works on eight numbers per word — half of the sixteen each word arrives
+with. The second head ran the whole time, in parallel, on the other eight, with
+its own <Equation tex="W_Q" />, <Equation tex="W_K" />, and
+<Equation tex="W_V" />, free to learn a different notion of "relevant"; its
+output was waiting to be concatenated onto the one you just watched being built.
+
+Production models differ only in how much of this there is. GPT-2 gives each
+word 768 numbers and splits them across twelve heads of sixty-four
+(<Equation tex="768 / 12 = 64" />) — the same slice, the same dot products, the
+same concatenation, the same <Equation tex="W_O" /> mixing the heads back into
+one vector per word. The arithmetic doesn't change. There's just more of it,
+running side by side.
+</Aside>

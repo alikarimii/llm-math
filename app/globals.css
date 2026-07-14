@@ -1,0 +1,863 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * COLOUR IS DATA.
+ *
+ * The site's promise is that every number on it is real. The design makes the
+ * same promise: the ONLY chroma on the page is model output. Attention mass,
+ * probabilities, value magnitudes get colour (`--data`). Everything else —
+ * chrome, links, headings, rules, buttons, form controls — is achromatic ink
+ * on paper. If it is coloured, it came from the forward pass.
+ *
+ * This is a hard rule, not a preference. No coloured buttons. No coloured
+ * links (links get ink + an underline). No coloured accents on asides. The one
+ * exception is `--error`, reserved for NaN — a value that should never appear,
+ * and should scream if it does.
+ *
+ * Consequence for the code: data → visual mappings stay as computed inline
+ * styles in the figure components (an attention weight of 0.0003 must render
+ * materially differently from 0.05 — the honesty guarantee, asserted in
+ * figures.test.tsx). Only CHROME lives in this file.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Ink & paper: achromatic, everything that is not model output ──────── */
+  --paper: #fbfbfa;        /* cool near-white; not cream */
+  --ink: #12131a;          /* near-black, faintly blue */
+  --ink-muted: #6b6f7f;
+  --rule: #e3e4e8;         /* hairlines, cell borders */
+
+  /* ── The only chroma on the page ──────────────────────────────────────── */
+  --data: #3a36db;         /* ultramarine — model output, and nothing else */
+  --void: #12131a;         /* masked cells, at low alpha: absence, not magnitude */
+  --error: #d6402a;        /* vermilion — NaN only, never chrome */
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  /* Newsreader harmonises with KaTeX's Computer Modern, which is the
+   * notation's native face; IBM Plex Mono carries every number and label.
+   * Both are self-hosted at build time by next/font (see app/layout.tsx), so
+   * `output: 'export'` stays a static, CDN-free bundle. */
+  --font-serif: var(--font-newsreader), 'Newsreader', Georgia, serif;
+  --font-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, monospace;
+
+  --text-xs: 0.6875rem;    /* mono: eyebrows, axis labels */
+  --text-sm: 0.8125rem;    /* mono: figcaptions, cells, form controls */
+  --text-base: 1.0625rem;  /* prose */
+  --text-lg: 1.25rem;      /* lede */
+  --text-h2: clamp(1.5rem, 1.1rem + 1.4vw, 2rem);
+  --text-h1: clamp(2.25rem, 1.4rem + 3.2vw, 3.5rem);
+  --text-display: clamp(2.5rem, 1.2rem + 5vw, 4.5rem);
+
+  /* ── Space & measure ──────────────────────────────────────────────────── */
+  --measure: 62ch;         /* prose column: the readable line */
+  --stage: 1280px;         /* the whole scroll stage */
+  /* Matrix/Vector cell width. The widest string a cell can hold is `-0.48`:
+   * five characters, so five `ch`. The extra 0.6ch is the gutter that keeps a
+   * minus sign from touching the number to its left — at 4.4ch they abutted and
+   * a correct matrix read as a corrupted one. In `ch`, so it scales with the
+   * font-size the `.mat-grid` rule below computes from the column it is given. */
+  --cell-w: 5.6ch;
+  --gap-x: 4px;            /* Matrix/Vector: the column gap, referenced in that sum */
+  --att-cell: 34px;        /* AttentionGrid: fixed cell size → a real grid */
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  /* The built-in `ease-out` keyword is too weak to read as intentional.
+   * Referenced via var() from each figure's inline `transition`, so it stays
+   * pure CSS and is still swept by the reduced-motion override below. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  color-scheme: light dark;
+}
+
+/*
+ * Dark is a second ink-and-paper set, not an inversion. `--data` is brightened
+ * rather than reused: the same ultramarine that reads as full attention mass on
+ * paper disappears into a dark ground at the low alphas the ramp depends on, and
+ * a ramp you cannot see at its low end is a ramp that lies about small weights.
+ *
+ * Declared twice on purpose: the media query serves readers who never touch a
+ * toggle, and the [data-theme] attribute lets an explicit choice win over the
+ * system preference. Both must work.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #0e0f13;
+    --ink: #e8e8ec;
+    --ink-muted: #8a8e9c;
+    --rule: #262832;
+    --data: #6e6aff;
+    --void: #000000;
+    --error: #ff6b52;
+  }
+}
+
+:root[data-theme='dark'] {
+  --paper: #0e0f13;
+  --ink: #e8e8ec;
+  --ink-muted: #8a8e9c;
+  --rule: #262832;
+  --data: #6e6aff;
+  --void: #000000;
+  --error: #ff6b52;
+}
+
+/*
+ * prefers-reduced-motion support.
+ *
+ * The figure components (Vector, Matrix, MatMul, SoftmaxRow, AttentionGrid)
+ * set `transition` via inline styles, and only a CSS rule marked `!important`
+ * can override an inline style. This is one of the few legitimate uses of
+ * `!important`: it is the only mechanism that can suppress those inline
+ * transitions without threading a `reducedMotion` prop through every figure
+ * and compromising their purity (they are meant to be pure functions of
+ * `progress`). Do not "clean this up" by removing `!important` — it is load
+ * bearing.
+ *
+ * ScrollStage still feeds figures real scroll-derived progress under reduced
+ * motion (see components/lesson/ScrollStage.tsx) so the figure always
+ * matches the step being read; this rule only removes the continuous
+ * animation between states, which is what prefers-reduced-motion asks for.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every number, everywhere, is tabular. This single declaration is what turns
+ * a ragged run-on of digits back into a grid you can scan a column of. */
+.mono, .cell, .eyebrow, figcaption,
+.att-label, .tri-label, .softmax-label, .aside-kind, .hero-eyebrow, .hero-caption,
+code, kbd, samp, input, select, button, textarea {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--data) 18%, transparent);
+}
+
+/* ── Type scale ───────────────────────────────────────────────────────────── */
+
+h1, h2, h3 {
+  font-weight: 500;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-h1);
+  line-height: 1.05;
+  letter-spacing: -0.022em;   /* tracking is size-specific: display text tightens */
+  margin: 0 0 0.5em;
+}
+
+h2 {
+  font-size: var(--text-h2);
+  line-height: 1.15;
+  letter-spacing: -0.012em;
+  margin: 0 0 0.6em;
+}
+
+h3 {
+  font-size: 1.125rem;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  margin: 0 0 0.5em;
+}
+
+p { margin: 0 0 1.1em; }
+
+strong { font-weight: 600; }
+em { font-style: italic; }
+
+/* Links: ink and an underline. A coloured link would be a lie about where the
+ * colour on this page comes from. */
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: var(--rule);
+  transition: text-decoration-color 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  a:hover { text-decoration-color: var(--ink); }
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 3rem 0;
+}
+
+/*
+ * The mono voice: eyebrows, captions, labels. Wide tracking, small, muted.
+ *
+ * Deliberately NOT uppercased, though the direction calls for uppercase mono
+ * labels in general — these particular labels are mathematics. `q · k` and
+ * `Q · K` are different objects, and text-transform would silently rewrite one
+ * into the other. Wide tracking and scale carry the same "this is chrome, not
+ * prose" signal without corrupting the notation.
+ */
+.eyebrow {
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  color: var(--ink-muted);
+  margin: 0 0 1.1em;
+  font-weight: 500;
+}
+
+figcaption {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+  margin-bottom: 0.9em;
+  line-height: 1.4;
+}
+
+small { font-size: var(--text-sm); }
+
+/* ── Shell & measure ──────────────────────────────────────────────────────── */
+/*
+ * Bug 3: prose used to run the full 2000px viewport. The shell centres every
+ * page; top-level prose gets a real measure; the scroll stage — and only the
+ * scroll stage — is allowed to use the full stage width.
+ */
+.shell {
+  max-width: var(--stage);
+  margin-inline: auto;
+  padding: 0 clamp(1.25rem, 4vw, 3rem) 6rem;
+}
+
+.shell > :is(h1, h2, h3, p, ul, ol, blockquote, details, figure, hr),
+.shell > .playground {
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+.shell > h2 { margin-top: 4rem; }
+
+/*
+ * The lesson's lead paragraph, immediately before <AttentionScrollStage>. It
+ * is authored as `<div className="lede">` (not `<p>`) because MDX wraps
+ * freestanding block text in its own `<p>`, and a `<p>` cannot legally
+ * contain another `<p>` — the browser would auto-close the outer one,
+ * silently dropping the class from the rendered text.
+ *
+ * Being a `<div>` it is not matched by the `.shell > :is(..., p, ...)` centring
+ * rule above, so it has to restate the measure and the centring itself —
+ * otherwise it sits flush left while every heading and paragraph around it is
+ * centred, which is exactly the misalignment it used to have. Everything
+ * outside the stage shares one axis; the stage is a wider band beneath it. The
+ * bottom margin is generous on purpose — it is the gap that keeps the lead from
+ * crowding the stage.
+ */
+.shell > .lede {
+  max-width: var(--measure);
+  margin-inline: auto;
+  margin-bottom: 4rem;
+}
+
+/* ── Scroll stage (bug 3, and the responsive collapse) ────────────────────── */
+
+/*
+ * The columns are not equal, and the ratio is arithmetic rather than taste. The
+ * widest figure is a 6 × 16 matrix: 16 cells of `--cell-w` plus 15 gaps of
+ * `--gap-x`. At an even split of a 1180px stage the figure column was 518px,
+ * which forces those 16 cells down to an 8px font — so the matrix refused to
+ * shrink, overflowed its track, and painted over the prose. At 1280px with a
+ * 1.35 : 1 split the figure column is ~650px, which fits 16 columns at a
+ * readable size, and the prose column is ~480px, still a comfortable measure.
+ *
+ * `minmax(0, …)` on both tracks is what actually holds the line: a grid item
+ * defaults to `min-width: auto`, meaning it refuses to shrink below its
+ * content — so without this the matrix widens the track instead of the track
+ * constraining the matrix.
+ */
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 3rem;
+  align-items: start;
+}
+
+.stage > * { min-width: 0; }
+
+.stage-figure {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;   /* bug 1: the figure centres in its own column */
+  min-width: 0;              /* a grid child may shrink below its content */
+  /* The figure column sizes the figure, never the reverse. Inline-size
+   * containment makes that a rule the browser enforces, and it is what lets the
+   * figures below ask how wide their column is (100cqw) and scale their type to
+   * fit it. */
+  container-type: inline-size;
+}
+
+.stage-figure > * { max-width: 100%; }
+
+.step-prose { max-width: var(--measure); }
+
+/*
+ * Progressive enhancement on top of the `justifyContent: 'center'` inline
+ * style Step.tsx sets. `safe center` centers as long as the content fits, and
+ * falls back to start-alignment the instant it doesn't — which is exactly
+ * what keeps a step taller than the viewport (an expanded <Aside>, say)
+ * reachable via the wrapper's `overflow-y: auto` instead of clipped off the
+ * top edge. A single style object can't declare the same property twice, so
+ * the plain `center` fallback lives inline (see Step.tsx) for browsers that
+ * don't understand the `safe` keyword; this rule silently no-ops there.
+ */
+.step-prose { justify-content: safe center !important; }
+
+/*
+ * Narrow screens: one column. The figure goes sticky-top and the prose scrolls
+ * underneath it, which preserves the whole point of the stage — figure and the
+ * prose describing it, on screen together — where a two-column grid cannot fit.
+ */
+@media (max-width: 900px) {
+  .stage {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .stage-figure {
+    height: 42vh;
+    z-index: 1;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    align-items: center;
+    overflow: auto;
+  }
+
+  .step-prose {
+    /* Sticky-centring the prose under a sticky-top figure would park it behind
+     * the figure. In one column the prose simply scrolls. */
+    position: static !important;
+    top: auto !important;
+    height: auto !important;
+    display: block !important;
+    overflow-y: visible !important;
+    padding: 2.5rem 0;
+  }
+}
+
+/* ── Figures: Matrix / Vector (bug 2 — ragged prose → an actual grid) ─────── */
+
+.mat, .vec, figure {
+  margin: 0;
+}
+
+/*
+ * Type that fits the column it is given. A cell is at most `--cell-w` (5.6ch)
+ * wide, so a row of `--cols` cells needs `--cols × 5.6ch` plus the gaps between
+ * them; `ch` in IBM Plex Mono is 0.6em, so that is 3.36em per cell. Solving for
+ * the em that makes the row exactly fill the column gives the calc below: ask
+ * the container how wide it is (100cqw), subtract the gaps, divide by the
+ * number of columns, divide by 3.4 (3.36 plus a hair, so a cell never touches
+ * the column edge). `min()` caps it at the normal cell size, so an 8-column
+ * matrix is set at --text-sm and only the dense ones shrink.
+ *
+ * This is why the reveal never overflows: the matrix cannot be too wide for its
+ * column, because its width is *derived* from its column.
+ *
+ * `overflow-x: auto` is a backstop, not a feature. If the arithmetic is ever
+ * wrong the matrix scrolls inside its own box rather than painting over the
+ * prose beside it — a visible bug instead of a lie.
+ */
+.mat-grid, .vec-cells {
+  width: fit-content;
+  margin-inline: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  gap: 3px var(--gap-x);
+  font-size: min(
+    var(--text-sm),
+    calc((100cqw - (var(--cols) - 1) * var(--gap-x)) / var(--cols) / 3.4)
+  );
+}
+
+/*
+ * A numeric cell. Mono + tabular-nums + right-aligned + a fixed min width is
+ * the whole fix: proportional serif digits of differing widths cannot line up,
+ * so a 6×16 matrix read as run-on text. These four declarations are what make a
+ * column scannable.
+ *
+ * Note what is NOT here: opacity, and the colour of an invalid cell. Those are
+ * data — the reveal, the mask, the NaN — and stay computed inline in the figure
+ * components, where the tests can see them.
+ */
+.cell {
+  /* Inherited, not set: the size comes from `.mat-grid` / `.vec-cells`, which
+   * computed it from the column they were given. A `font-size` here would win
+   * over that (it is on the cell, not an ancestor) and put the dense matrices
+   * straight back over the prose. */
+  font-size: inherit;
+  line-height: 1.5;
+  text-align: right;
+  min-width: var(--cell-w);
+  letter-spacing: 0;
+  font-feature-settings: 'tnum' 1;
+  white-space: nowrap;
+}
+
+/* ── Figures: AttentionGrid (bug 1 — labels detached from the grid) ───────── */
+/*
+ * The old `gridTemplateColumns: 'auto repeat(n, 32px)'` on a `display: grid`
+ * block let the `auto` label column absorb the full page width, flinging the
+ * cells ~1600px away at the right edge. `inline-grid` + `width: fit-content`
+ * makes the grid exactly as wide as its content, and the stage centres it.
+ */
+.att {
+  display: inline-grid;
+  width: fit-content;
+  max-width: 100%;
+  gap: 3px;
+  align-items: center;
+}
+
+.att-label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  color: var(--ink-muted);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.att-label-col { text-align: center; }
+.att-label-row { text-align: right; padding-right: 0.5rem; }
+
+.att-cell {
+  position: relative;
+  width: var(--att-cell);
+  height: var(--att-cell);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+
+/*
+ * A cell above the diagonal is not a small weight — it is a cell the causal
+ * mask forbids the model to look at. Absence, not magnitude, so it gets `--void`
+ * at low alpha and no data colour at all. This is the one shape unique to this
+ * subject, and it should read as structure.
+ */
+.att-cell[data-void='true'] {
+  background: color-mix(in srgb, var(--void) 6%, transparent);
+  border-color: transparent;
+}
+
+/* ── Figures: SoftmaxRow, MatMul ─────────────────────────────────────────── */
+
+.softmax {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.softmax-label {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.matmul {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: var(--text-sm);
+  max-width: 34ch;
+  margin-inline: auto;
+}
+
+.matmul [data-role='sum'] {
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+/* ── Aside ───────────────────────────────────────────────────────────────── */
+/*
+ * Achromatic by law. The old green/purple left borders were chrome wearing
+ * colour that had not come from the model. Primer and deep are distinguished by
+ * their copy ("New to this?" / "Go deeper:") and by border weight, not by hue.
+ */
+.aside {
+  border-left: 1px solid var(--rule);
+  padding: 0.1rem 0 0.1rem 1rem;
+  margin: 1.75rem 0;
+}
+
+.aside[data-kind='deep'] { border-left-width: 3px; border-left-color: var(--ink-muted); }
+
+.aside > summary {
+  cursor: pointer;
+  list-style: none;
+  display: block;
+  transition: color 160ms var(--ease-out);
+}
+
+.aside > summary::-webkit-details-marker { display: none; }
+
+.aside-kind {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  color: var(--ink-muted);
+  margin-bottom: 0.15em;
+}
+
+.aside-title {
+  font-style: italic;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 0.18em;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .aside > summary:hover .aside-title { text-decoration-color: var(--ink); }
+}
+
+.aside-body {
+  margin-top: 0.9em;
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+
+.aside-body p:last-child { margin-bottom: 0; }
+
+/* ── Playground: form controls are chrome, so they are ink ───────────────── */
+
+.playground {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin: 2rem auto 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 100%;
+  width: fit-content;
+}
+
+.playground-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.playground input[type='checkbox'] {
+  accent-color: var(--ink);   /* not --data: a checkbox is not model output */
+  width: 1rem;
+  height: 1rem;
+}
+
+.playground select {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+  transition: border-color 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .playground select:hover { border-color: var(--ink-muted); }
+}
+
+.playground-note {
+  max-width: 46ch;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* ── Hero: the causal mask triangle ──────────────────────────────────────── */
+/*
+ * The one bold thing on the site. The lower-triangular attention matrix is the
+ * shape unique to this subject — causality made visible — and every weight in it
+ * is a real number from a real forward pass. Everything around it stays quiet;
+ * the boldness is spent here and nowhere else.
+ */
+.hero {
+  min-height: min(100vh, 52rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(2rem, 5vw, 5rem);
+  padding: 4rem 0 5rem;
+}
+
+.hero-title {
+  font-size: var(--text-display);
+  line-height: 1.02;
+  letter-spacing: -0.028em;
+  margin: 0;
+}
+
+.hero-lede {
+  font-size: var(--text-lg);
+  line-height: 1.55;
+  color: var(--ink-muted);
+  max-width: 30ch;
+  margin: 1.5rem 0 0;
+}
+
+.hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.16em;
+  color: var(--ink-muted);
+  margin: 0 0 1.5rem;
+}
+
+.hero-caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+  margin: 1.25rem 0 0;
+  max-width: 32ch;
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    gap: 2.5rem;
+    padding: 2.5rem 0 3rem;
+  }
+}
+
+/* ── The triangle itself ─────────────────────────────────────────────────── */
+
+.tri {
+  display: inline-grid;
+  width: fit-content;
+  gap: 4px;
+  align-items: center;
+}
+
+.tri-cell {
+  position: relative;
+  width: var(--tri-cell, 46px);
+  height: var(--tri-cell, 46px);
+  border-radius: 4px;
+  border: 1px solid var(--rule);
+}
+
+/* Above the diagonal: the future. The mask forbids it, so it is void — not a
+ * weight of zero rendered faintly, but a cell that is not there to be read. */
+.tri-cell[data-void='true'] {
+  background: color-mix(in srgb, var(--void) 5%, transparent);
+  border-color: transparent;
+}
+
+.tri-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.tri-label-col { text-align: center; }
+.tri-label-row { text-align: right; padding-right: 0.6rem; }
+
+@media (max-width: 520px) {
+  .tri { --tri-cell: 36px; }
+}
+
+/* ── KaTeX ───────────────────────────────────────────────────────────────── */
+/*
+ * Computer Modern is the notation's native face and Newsreader was chosen to sit
+ * beside it. Left alone except for colour and a display equation's rhythm.
+ */
+.katex { color: var(--ink); font-size: 1.05em; }
+.katex-display { margin: 1.5rem 0; overflow-x: auto; overflow-y: hidden; }
+
+/* ── The article page (/model) ───────────────────────────────────────────── */
+/*
+ * A single centred column, on the same axis as every other non-stage page: the
+ * article is prose with figures in it, not a stage, so it does not get the
+ * asymmetric two-column treatment.
+ */
+.shell > .article-head,
+.shell > .spec,
+.shell > .heads,
+.shell > pre {
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+.article-head {
+  padding: 4rem 0 0;
+}
+
+/* The whole model, as five rows. It is a definition list because that is what it
+ * is: a term and what the term is worth. */
+.spec {
+  border-block: 1px solid var(--rule);
+  padding: 0.5rem 0;
+  margin: 3rem auto;
+}
+
+.spec dl { margin: 0; }
+
+.spec-row {
+  display: grid;
+  grid-template-columns: 9rem auto 1fr;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.6rem 0;
+}
+
+.spec-row + .spec-row { border-top: 1px solid var(--rule); }
+
+.spec dt {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  color: var(--ink-muted);
+}
+
+.spec dd {
+  display: contents;
+  margin: 0;
+}
+
+/* The only chroma in the block: these are facts about the model, i.e. data. */
+.spec-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  color: var(--data);
+  text-align: right;
+}
+
+.spec-gloss {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* The two heads, side by side — the comparison IS the point, so they must be
+ * seen at once. Below the breakpoint they stack rather than shrink: a triangle
+ * whose cells are too small to read a weight off is worse than a scroll. */
+.heads {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 2.5rem;
+  margin: 2.5rem auto 3rem;
+  --tri-cell: 38px;
+}
+
+.head { margin: 0; }
+
+.head figcaption {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-muted);
+  margin-top: 1.25rem;
+}
+
+.head-title {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  margin-bottom: 0.5rem;
+}
+
+.head figcaption code { color: var(--ink); }
+.head figcaption strong { color: var(--data); font-weight: 500; }
+
+/* ── Code blocks ─────────────────────────────────────────────────────────── */
+/*
+ * Unhighlighted on purpose. Syntax colour would put chroma on the page that is
+ * not model output, which is the one rule the palette has. The code is short
+ * enough to read without it.
+ */
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  background: var(--rule);
+  background: color-mix(in oklab, var(--rule) 45%, transparent);
+  border-left: 2px solid var(--rule);
+  border-radius: 0 4px 4px 0;
+  padding: 1.25rem 1.5rem;
+  margin: 2rem auto;
+  overflow-x: auto;
+}
+
+pre code {
+  font-size: inherit;
+  color: var(--ink);
+  background: none;
+  padding: 0;
+}
+
+/* Inline code, in prose. */
+:is(p, li, dd, figcaption) > code {
+  font-size: 0.9em;
+  background: color-mix(in oklab, var(--rule) 55%, transparent);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+@media (max-width: 700px) {
+  .spec-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.25rem;
+  }
+  .spec-gloss { grid-column: 1 / -1; }
+}
