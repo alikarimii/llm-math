@@ -110,8 +110,9 @@ const STEP_FIGURES: ((c: Ctx, p: number) => ReactNode)[] = [
     )
   },
   // 8 — and 1.0 → 4.0 the other way. The six bars no longer sum to 1: at T = 4
-  //     nearly a third of the mass has moved onto the ten words not drawn here,
-  //     which is the point the prose makes and the reason top-p follows.
+  //     nearly a third of the mass (~29%) has moved onto the twelve illegal
+  //     words — not just the ten undrawn ones, which hold only ~22% — which is
+  //     the point the prose makes and the reason top-p follows.
   (c, p) => {
     const t = lerp(1, 4, reveal(p))
     return (
