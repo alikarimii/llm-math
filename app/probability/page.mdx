@@ -1,0 +1,351 @@
+import { ProbabilityScrollStage } from './ProbabilityScrollStage'
+import { Playground } from './Playground'
+
+# Where the Numbers Come From
+
+<div className="lede">
+You have written this, or something like it:
+
+`temperature: 0.7`
+
+This page is about what it actually does — and to explain that, we first have to
+explain what it is doing it *to*. Every number here comes from the same
+transformer we trained in the last lesson. Nothing is staged for effect.
+</div>
+
+<ProbabilityScrollStage>
+
+<Step label="the residual stream">
+## The last lesson stopped one step early
+
+At the end of *[How a word decides what to look at](/attention)*, the model had
+just finished reading a sentence, and every word had walked away with sixteen
+numbers. That was the whole payoff: **it** had looked back at **dog**, and the
+row for **it** carried the evidence.
+
+Then the page ended, and the model never said anything.
+
+Look at the row on the left. It is the last word's row — sixteen numbers, the
+same shape the sentence arrived in. It is not an answer. It is not a word, or a
+ranking, or a probability. There is nothing in it you could print. To get from
+this row to *the next word*, the model needs one more piece of machinery, and it
+has been sitting in the weights file this entire time.
+</Step>
+
+<Step label="unembed">
+## One more matrix
+
+Here it is. Sixteen rows of sixteen numbers, called **unembed**, and it has
+shipped in `weights.json` since the first day of this project without a single
+figure ever drawing it.
+
+Its shape is the tell. The model's vocabulary is sixteen words — `the`, `cat`,
+`dog`, `bird`, `drank`, `ate`, `found`, `quickly`, and eight more — and this
+matrix has exactly one row per word. Each row is a sixteen-number question of
+the form *how much does this look like me?*
+
+So you take the last word's row — the sixteen numbers from the step before — and
+you compare it against every row of this matrix, one dot product per word.
+Sixteen comparisons in, sixteen scores out. One score per word in the language
+the model knows.
+</Step>
+
+<Step label="logits">
+## Sixteen scores, one per word
+
+Those sixteen scores are what comes out, and they are the model's entire opinion
+about what happens next.
+
+We are asking it a specific question now. The context is just two words — **the
+cat** — and the model is scoring every word it knows as a continuation. Four
+scores come back positive and clustered at the top:
+
+`quickly` **3.767** · `ate` **2.550** · `found` **2.452** · `drank` **2.375**
+
+The other twelve come back negative. `it` scores **−3.164**. `food` scores
+**−7.725**. The bars on the left are those scores, tallest first, with the
+smallest of them resting on the floor.
+
+<Aside kind="primer" title="What is a logit?">
+A **logit** is a raw score, before it means anything. It is not a probability
+and does not pretend to be one: it can be negative, it has no upper limit, and
+the sixteen of them do not add up to anything in particular. Their only job is
+to be *comparable* — bigger means the model likes that word more here. Any
+number you see coming out of a language model's final matrix, before it has been
+normalised, is a logit.
+</Aside>
+</Step>
+
+<Step label="softmax">
+## Scores become probabilities
+
+Watch the bars change shape. That is one function running: **softmax**, the same
+four lines of code that turned attention scores into attention weights in the
+previous lesson, doing the same job one last time.
+
+It raises *e* to the power of each score and divides each result by the total.
+Big scores get exponentially bigger, negative scores get squashed toward nothing,
+and — because everything was divided by the total — the sixteen results are
+guaranteed to sum to exactly 1.
+
+`quickly` **0.551** · `ate` **0.163** · `found` **0.148** · `drank` **0.137**
+
+That is a probability distribution over the next word, and it is the only thing
+a language model ever produces. Not a word. Not a sentence. A list of numbers
+that sums to one, and then — the part everyone forgets — a *die roll*.
+
+So: the model thinks **the cat** is followed by `quickly` about 55% of the time,
+and by one of three verbs the rest of the time. A reasonable-looking claim. But
+why should you believe those particular numbers? Where does **0.551** come from?
+</Step>
+
+<Step label="count the corpus">
+## Now go and count the training data
+
+Stop looking at the network. Go and look at the eighteen sentences it was trained
+on.
+
+Six of them begin with **the cat**. Here they are, all of them:
+
+- the cat **drank** water so it purred
+- the cat **ate** bread so it purred
+- the cat **found** food so it purred
+- the cat **quickly** drank water so it purred
+- the cat **quickly** ate bread so it purred
+- the cat **quickly** found food so it purred
+
+Now count the third word. `quickly` appears three times out of six. `drank`,
+`ate`, and `found` appear once each. Written as fractions:
+
+`quickly` **0.500** · `ate` **0.167** · `found` **0.167** · `drank` **0.167**
+
+And the model — which has never counted anything, which arrived at its numbers by
+multiplying matrices — said **0.551** · **0.163** · **0.148** · **0.137**.
+
+That is the whole lesson, and everything after this is a consequence of it. Those
+are the same numbers. The grey bars behind the model's are the counts; the model
+landed on them. Nobody told it the counts. Nobody could have — there is no table
+of frequencies anywhere in `weights.json`, only matrices. It learned them by
+guessing, being told it was wrong, and being nudged, six thousand times.
+
+<Aside kind="primer" title="What is a corpus?">
+The **corpus** is just the training data: the complete set of text the model was
+shown, and the only text it has ever seen. For a production model that is a
+sizeable fraction of the internet, which is why nobody can ever quite tell you
+what is in it. For this one it is eighteen hand-written sentences about a cat, a
+dog, and a bird — the whole universe, listed above, small enough to count on
+your fingers. That is the point: here you can check the claim rather than
+believe it.
+</Aside>
+</Step>
+
+<Step label="cross-entropy">
+## The force that put those numbers there
+
+The nudging has a name. It is **cross-entropy loss**, and it is one expression:
+
+<Equation tex="\mathcal{L} = -\log P(\text{correct word})" display />
+
+Take the model's probability for the word that actually came next, take its
+logarithm, flip the sign. If the model gave the right word a probability of 1,
+the loss is 0 — nothing to fix. As its probability for the right word falls
+toward 0, the loss climbs without limit. Training does one thing: it changes
+every number in the model, a little, in whichever direction makes this quantity
+smaller. Six thousand times.
+
+Here is what that produced. A model that knows nothing — one that spreads its
+probability evenly over all sixteen words, the very first step of training —
+scores **2.7726**, a **perplexity of 16.00**. It is choosing between sixteen
+words, blind. Our trained model scores **1.2506**, a **perplexity of 3.49**.
+
+And the floor — the best score any model could possibly achieve on this corpus,
+even a perfect one — is **1.2425**, a **perplexity of 3.46**.
+
+We are three hundredths of a perplexity point away from perfect. And the model
+cannot do better, ever, no matter how long you train it: after **the cat**, the
+corpus genuinely *is* ambiguous. Four words really can come next. A model that
+claimed certainty there would be wrong.
+
+<Aside kind="primer" title="Why a logarithm?">
+This is the one genuinely unfamiliar piece of mathematics on the page, and it
+earns its place. The probability of a whole sentence is the probability of each
+word *multiplied* together — and multiplying thousands of numbers smaller than 1
+gives you a number so small it underflows to zero, and a gradient you cannot
+work with.
+
+A logarithm turns multiplication into addition. `log(a × b) = log(a) + log(b)`.
+So "multiply all these probabilities" becomes "add up all these penalties",
+which is numerically stable and pleasant to differentiate. The minus sign is
+there because the log of a probability is always negative, and a loss you are
+trying to *minimise* is easier to think about when it is positive. That is the
+entire reason loss is written <Equation tex="-\log P" /> and not just
+<Equation tex="P" />.
+</Aside>
+
+<Aside kind="primer" title="What is perplexity? What is KL?">
+**Perplexity** is cross-entropy made readable: it is *e* raised to the loss, and
+it answers the question *how many words is the model effectively choosing
+between?* A perplexity of 16 on a 16-word vocabulary means the model is
+choosing blindly among all of them — it knows nothing. A perplexity of 1 means
+it is certain. Our 3.49 means that, on average, the model is choosing between
+about three and a half words. Given that four words can legally follow **the
+cat**, that is roughly the truth.
+
+**KL divergence** sounds like a third thing to learn, and it is not. It is the
+gap between the two numbers already on this page: **1.2506 − 1.2425 = 0.0082
+nats**. That is all KL is — *how much worse than the best possible score you
+are*. It needs no formula of its own. A KL of 0 would mean the model's
+distribution is exactly the corpus's frequencies. Ours is 0.0082 away from
+that, which is another way of saying: the claim in the previous step is not
+poetry, it is measurable, and this is the measurement. A test in this repo
+computes it on every context and fails the build if it ever exceeds 0.05.
+</Aside>
+</Step>
+
+<Step label="the cliff">
+## It also learned which words are illegal
+
+The model did not only learn the odds. Look at where the rest of its probability
+went, or rather did not.
+
+Those four words hold **99.84%** of the mass between them. The other twelve
+words share the remaining **0.16%** — for all sixteen of them together to sum to
+one, that is what is left. And the drop is not a slope, it is a cliff. `drank`,
+the least likely of the four legal words, sits at a logit of **2.375**. The very
+next word down, `it`, sits at **−3.164**.
+
+Nothing lives in between. There is no word the model considers *somewhat*
+plausible after **the cat**. It has learned that four words are allowed here and
+twelve are not, and it has learned that far more emphatically than it learned
+the odds among the four.
+
+That fact is the reason the last knob in this lesson exists.
+
+<Aside kind="deep" title="Why the tail matters on a real model">
+Here the tail is twelve words holding 0.16%, and you could delete it without
+anyone noticing. On a model with a 50,000-token vocabulary the tail is tens of
+thousands of tokens, and it is much fatter — a few percent of the probability
+mass, spread so thinly that no individual token matters, but collectively large
+enough that a sampler *will* reach into it, and eventually pull out something
+absurd. That is what `top_p` is really for: not to improve the top of the
+distribution, which is fine, but to amputate a tail that is too long to see.
+</Aside>
+</Step>
+
+<Step label="temperature down">
+## Now you can lie to it
+
+You know what the honest distribution is. You counted it. So now we can look at
+what the knobs do to it, and — for once — say whether they made it better or
+worse.
+
+**Temperature is a division.** That is the whole of it: before softmax, divide
+every logit by *T*.
+
+<Equation tex="\text{softmax}(\text{logits} / T)" display />
+
+Dividing by a number smaller than 1 makes every logit bigger, which stretches the
+gaps between them, which softmax then exaggerates. Watch the bars as you scroll:
+at `T = 0.25`, `quickly` climbs to **0.984**.
+
+The model now claims it is 98% sure. But you *counted the corpus*. `quickly`
+follows **the cat** three times in six. The truth is **0.500**.
+
+Low temperature made the model **more confident and less truthful at once** —
+and you can only see that because you already know what the truth was. This is
+the sharp edge of the whole page. The confident-sounding output is the wrong one.
+
+<Aside kind="deep" title="What happens at T = 0?">
+A division by zero, strictly. But watch what happens as *T* gets smaller and
+smaller: the biggest logit runs away from the others, and softmax gives it more
+and more of the mass, until in the limit it has all of it and everything else has
+none. That limit has a name — **greedy decoding**: always take the likeliest
+word, roll no dice at all. It is what `temperature: 0` means in an API, and it is
+implemented as a special case, not as an actual division. The slider below stops
+at 0.1 for the same reason.
+</Aside>
+</Step>
+
+<Step label="temperature up">
+## And the other direction
+
+Divide by a number *larger* than 1 and the gaps between the logits shrink instead.
+Softmax sees four scores that look nearly the same, and it does the only honest
+thing it can with four nearly-equal scores: it spreads the mass out.
+
+At `T = 4.0`:
+
+`quickly` **0.224** · `ate` **0.165** · `found` **0.161** · `drank` **0.158**
+
+That is very nearly a coin flip between four words. The model still knows which
+four words are legal — the cliff is far too steep for a division by four to
+flatten — but among them it has given up having an opinion. Push *T* high enough
+and every distribution converges on the same thing: uniform, perplexity 16,
+the model that knows nothing.
+
+So temperature does not add creativity or subtract it. It scales how far the
+model's own scores are allowed to be from each other, in one direction or the
+other, and everything you have heard about it is downstream of that.
+</Step>
+
+<Step label="top-p">
+## Truncating instead of reshaping
+
+The other knob you have typed does something completely different. Temperature
+*reshapes* the whole distribution. **Top-p** — nucleus sampling — leaves the
+shape alone and simply cuts it off.
+
+Sort the words by probability, add them up from the top, and stop as soon as the
+running total reaches *p*. Keep those words, throw the rest away, and divide what
+is left by its own total so it sums to 1 again. Everything below the line becomes
+literally impossible.
+
+On this model, with this context, the results are almost funny:
+
+`p = 0.5` keeps **one** word. `p = 0.9` keeps **four**. And `p = 0.99` still
+keeps **four** — because there is nothing in between to keep.
+
+That is the cliff again. Between four words at 99.84% and twelve words at 0.16%,
+almost any *p* you choose lands in the same place. Nucleus sampling on this model
+is a blunt instrument because this model's opinion is blunt; on a real one, with
+a real tail, that same rule is what stops the tenth-thousandth-most-likely token
+from ever getting its turn.
+</Step>
+
+</ProbabilityScrollStage>
+
+## Roll the dice yourself
+
+One thing is still missing, and it is the thing that surprises people most: **the
+distribution does not pick a word.**
+
+It cannot. It is a list of numbers. Picking is a separate act, and it is the
+crudest piece of code in this entire project — take a random number between 0 and
+1, walk down the list adding probabilities up, and stop when the running total
+passes it. That is `sampleFrom`, and that is all sampling is. A weighted die.
+
+Which means a word with probability 0.5 comes up about half the time. Press the
+button six times: you should get `quickly` around three of them, and one of the
+verbs the rest — which is exactly what the six sentences said, at the top of this
+page, when we counted them by hand.
+
+<Playground />
+
+## And that is the whole machine
+
+There is nothing else. A language model reads a context, produces one number per
+word in its vocabulary, softmaxes those numbers into a distribution, and rolls a
+weighted die. Then it appends the word it drew, and does it all again. That is
+what GPT-4 is doing, on every token, forever. It has 100,000 words instead of
+sixteen and a hundred layers instead of one, and it is doing this.
+
+You came here to find out what `temperature: 0.7` does.
+
+It divides. It divides the sixteen scores that come out of the last matrix, before
+softmax turns them into odds — and you have now watched where every one of those
+scores comes from, seen that the odds are the frequencies of what actually
+followed in the training data, and seen exactly what you give up when you push
+them around. At 0.7 you are asking the model to be a little more confident than
+the evidence it was trained on actually supports.
+
+Sometimes that is what you want. Now you know what it costs.
