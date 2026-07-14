@@ -619,6 +619,12 @@ small { font-size: var(--text-sm); }
   margin: 0;
 }
 
+.playground-note [data-draw] {
+  display: inline-block;
+  margin-right: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Hero: the causal mask triangle ──────────────────────────────────────── */
 /*
  * The one bold thing on the site. The lower-triangular attention matrix is the
