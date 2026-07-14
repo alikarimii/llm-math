@@ -619,9 +619,14 @@ small { font-size: var(--text-sm); }
   margin: 0;
 }
 
+/* The drawn tokens are a running list of separate words, so they need a real
+ * gap between them: they are inline-block, which collapses the whitespace JSX
+ * would otherwise leave, and without a margin they render as one run-on string
+ * ("bread" + "purred" reading as "breadpurred"). This file defines no spacing
+ * scale, so the value is a literal, matching the other rules here. */
 .playground-note [data-draw] {
   display: inline-block;
-  margin-right: var(--space-2);
+  margin-right: 0.5rem;
   font-variant-numeric: tabular-nums;
 }
 
