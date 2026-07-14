@@ -100,6 +100,7 @@ fixtures = {
                     for row in head] for head in t(scaled[0])],
         "weights": t(w[0]),
         "output": t(out[0]),
+        "logits": t(real_logits[0]),
     },
 }
 

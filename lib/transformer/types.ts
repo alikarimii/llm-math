@@ -16,4 +16,7 @@ export interface ForwardTrace {
   q: Tensor3; k: Tensor3; v: Tensor3
   scores: Tensor3; scaled: Tensor3; weights: Tensor3
   output: Matrix
+  /** [T, vocab] — one score per vocabulary word per position. Row T-1 predicts
+   *  the NEXT word. Raw and unnormalised: these are logits, not probabilities. */
+  logits: Matrix
 }
