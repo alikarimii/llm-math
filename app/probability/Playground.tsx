@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { forward, loadModel } from '../../lib/transformer/forward'
 import { softmax, temper, sampleFrom } from '../../lib/transformer/ops'
 import { Distribution } from '../../components/figures/Distribution'
+import { displayOrder } from './displayOrder'
 
 const CONTEXT = ['the', 'cat']
 
@@ -32,13 +33,10 @@ export function Playground() {
    * temperature reshapes the bars in place instead of making them swap
    * positions underneath the reader's cursor.
    */
-  const order = useMemo(() => {
-    const p = softmax(logits)
-    return model.vocab
-      .map((word, i) => ({ word, i }))
-      .sort((a, b) => p[b.i] - p[a.i])
-      .slice(0, 6)   // the 4 legal words plus 2 of the tail, so the cliff shows
-  }, [logits, model.vocab])
+  const order = useMemo(
+    () => displayOrder(model.vocab, softmax(logits)),
+    [logits, model.vocab]
+  )
 
   const probs = softmax(temper(logits, t))
   const shown = order.map(({ i }) => probs[i])

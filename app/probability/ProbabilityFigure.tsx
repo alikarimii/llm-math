@@ -8,6 +8,7 @@ import { Vector } from '../../components/figures/Vector'
 import { Matrix } from '../../components/figures/Matrix'
 import { Distribution } from '../../components/figures/Distribution'
 import { SoftmaxRow } from '../../components/figures/SoftmaxRow'
+import { displayOrder } from './displayOrder'
 
 const CONTEXT = ['the', 'cat']
 
@@ -150,11 +151,8 @@ export function ProbabilityFigure({ step, progress }: StageState) {
     const probs = softmax(logitRow)
 
     // Fixed display order — likeliest first — computed once, so bars never leap.
-    // Six words: the four legal ones, plus two of the tail so the cliff is visible.
-    const order = model.vocab
-      .map((word, i) => ({ word, i }))
-      .sort((a, b) => probs[b.i] - probs[a.i])
-      .slice(0, 6)
+    // Shared with the playground, so the two sets of bars on this page agree.
+    const order = displayOrder(model.vocab, probs)
 
     const freqs = nextTokenFreqs(CONTEXT)
 

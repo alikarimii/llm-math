@@ -44,7 +44,7 @@ export function Distribution({
           return (
             <div
               className="distribution-row"
-              key={labels[i]}
+              key={i}
               data-revealed={revealed}
               data-cut={cut}
             >
