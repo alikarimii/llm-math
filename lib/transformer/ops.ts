@@ -37,8 +37,10 @@ const renormalise = (probs: Vector, keep: Set<number>): Vector => {
 }
 
 /** Keep only the k likeliest words; renormalise. k >= length is a no-op. */
-export const topK = (probs: Vector, k: number): Vector =>
-  k >= probs.length ? [...probs] : renormalise(probs, new Set(ranked(probs).slice(0, k)))
+export const topK = (probs: Vector, k: number): Vector => {
+  if (!(k >= 1)) throw new Error(`k must be >= 1, got ${k}`)
+  return k >= probs.length ? [...probs] : renormalise(probs, new Set(ranked(probs).slice(0, k)))
+}
 
 /**
  * Nucleus sampling: keep the smallest set of words whose probabilities add up

@@ -3,7 +3,6 @@ import {
   softmax, temper, topK, topP, sampleFrom, entropy, perplexity, crossEntropy,
 } from './ops'
 
-const TOL = 1e-9
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 
 describe('temper', () => {
@@ -47,6 +46,11 @@ describe('topK', () => {
     const probs = [0.6, 0.4]
     expect(topK(probs, 5)).toEqual(probs)
   })
+
+  it('rejects k < 1, which would keep an empty set and divide by zero', () => {
+    expect(() => topK([0.6, 0.4], 0)).toThrow(/k/i)
+    expect(() => topK([0.6, 0.4], -1)).toThrow(/k/i)
+  })
 })
 
 describe('topP', () => {
@@ -84,10 +88,27 @@ describe('sampleFrom', () => {
     expect(sampleFrom(probs, 0.999)).toBe(2)
   })
 
-  it('never returns a zero-probability token, even at the very top of the range', () => {
-    // floating-point sums can fall a hair short of 1; the last nonzero token
-    // must absorb the remainder rather than the function returning a masked one.
-    expect(sampleFrom([0.5, 0.5, 0], 0.9999999999)).toBe(1)
+  it('falls back to the last nonzero token when floating-point error leaves cum short of u', () => {
+    // 0.7 + 0.1 + 0.1 + 0.1 === 0.9999999999999999 in IEEE double precision —
+    // NOT 1 — so this genuinely exercises the `return last` fallback: with
+    // u equal to that same sum, `u < cum` never holds for any i (cum tops out
+    // at exactly u, never exceeds it), so the loop falls through without
+    // returning. (By contrast, 0.5 + 0.5 is exactly 1.0, so u = 0.9999999999
+    // would satisfy u < cum on the normal path and never reach the fallback
+    // at all — that would be a test that proves nothing.)
+    const probs = [0.7, 0.1, 0.1, 0.1]
+    const u = probs.reduce((a, b) => a + b, 0) // 0.9999999999999999
+    expect(sampleFrom(probs, u)).toBe(3)
+  })
+
+  it('the fallback skips trailing zero-probability tokens rather than returning the raw last index', () => {
+    // Same floating-point shortfall as above, but with a zero-probability
+    // token appended. A naive fallback of "return probs.length - 1" would
+    // hand back index 4 — a token the model considers impossible. The
+    // fallback must instead return the last token that ever had real mass.
+    const probs = [0.7, 0.1, 0.1, 0.1, 0]
+    const u = probs.reduce((a, b) => a + b, 0) // 0.9999999999999999
+    expect(sampleFrom(probs, u)).toBe(3)
   })
 
   it('is deterministic given u — the randomness lives at the call site', () => {
