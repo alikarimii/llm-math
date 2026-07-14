@@ -22,8 +22,9 @@ export default function Home() {
             real trained transformer.
           </p>
           <p className="hero-lede">
-            <Link href="/probability">Where the numbers come from</Link> — what
-            <code>temperature: 0.7</code> actually divides, and how the model&rsquo;s
+            <Link href="/probability">Where the numbers come from</Link> — what{' '}
+            <code>temperature: 0.7</code>{' '}
+            actually divides, and how the model&rsquo;s
             odds turn out to be the frequencies of its own training data.
           </p>
           <p className="hero-lede">

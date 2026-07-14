@@ -26,7 +26,14 @@ row for **it** carried the evidence.
 Then the page ended, and the model never said anything.
 
 Look at the row on the left. It is the last word's row — sixteen numbers, the
-same shape the sentence arrived in. It is not an answer. It is not a word, or a
+same shape the sentence arrived in. That row has a name, and it is the only piece
+of jargon in this section: the **residual stream**. It means exactly what you are
+looking at — the running sixteen-number summary each word carries through the
+model, which every layer reads from and adds its findings back into, so that it
+comes out the same size it went in. One layer of attention has already written to
+it. Now something has to read it.
+
+It is not an answer. It is not a word, or a
 ranking, or a probability. There is nothing in it you could print. To get from
 this row to *the next word*, the model needs one more piece of machinery, and it
 has been sitting in the weights file this entire time.
@@ -62,9 +69,12 @@ scores come back positive and clustered at the top:
 
 `quickly` **3.767** · `ate` **2.550** · `found` **2.452** · `drank` **2.375**
 
-The other twelve come back negative. `it` scores **−3.164**. `food` scores
-**−7.725**. The bars on the left are those scores, tallest first, with the
-smallest of them resting on the floor.
+The other twelve come back negative. `it` scores **−3.164**, and the lowest of the
+sixteen, `food`, scores **−7.725**.
+
+Sixteen bars will not fit on the left, so the figure draws six: those four, plus
+`it` and `bird`, the two best of the twelve. Tallest first, with the two negative
+scores flat on the floor — which is a preview of something we come back to.
 
 <Aside kind="primer" title="What is a logit?">
 A **logit** is a raw score, before it means anything. It is not a probability
@@ -153,13 +163,19 @@ toward 0, the loss climbs without limit. Training does one thing: it changes
 every number in the model, a little, in whichever direction makes this quantity
 smaller. Six thousand times.
 
-Here is what that produced. A model that knows nothing — one that spreads its
-probability evenly over all sixteen words, the very first step of training —
-scores **2.7726**, a **perplexity of 16.00**. It is choosing between sixteen
-words, blind. Our trained model scores **1.2506**, a **perplexity of 3.49**.
+Here is what that produced. Score the three numbers on one context — **the cat**,
+the one we have been counting all page — and compare them.
 
-And the floor — the best score any model could possibly achieve on this corpus,
-even a perfect one — is **1.2425**, a **perplexity of 3.46**.
+A model that knows nothing, one that spreads its probability evenly over all
+sixteen words, scores **2.7726**, a **perplexity of 16.00**. It is choosing
+between sixteen words, blind. Our trained model, after **the cat**, scores
+**1.2506**, a **perplexity of 3.49**.
+
+And the floor — the best score any model could possibly achieve *after those two
+words*, even a perfect one — is **1.2425**, a **perplexity of 3.46**. (These are
+all scores at one context. Across the whole corpus the model does considerably
+better, because most contexts are not ambiguous at all: after **the cat drank**
+there is only ever one word that can come next.)
 
 We are three hundredths of a perplexity point away from perfect. And the model
 cannot do better, ever, no matter how long you train it: after **the cat**, the
@@ -180,6 +196,13 @@ there because the log of a probability is always negative, and a loss you are
 trying to *minimise* is easier to think about when it is positive. That is the
 entire reason loss is written <Equation tex="-\log P" /> and not just
 <Equation tex="P" />.
+
+And that is where **nats** come from. A nat is simply the unit you get when the
+logarithm you took was the natural one — base *e*, the `Math.log` in the code.
+Use base 2 instead and the same quantity comes out in **bits**; it is the same
+measurement in different money. So a loss of `2.7726 nats` just means *the
+natural log of 16*, and `0.0082 nats` is a very small amount of the same stuff.
+Nothing more is hiding in the word.
 </Aside>
 
 <Aside kind="primer" title="What is perplexity? What is KL?">
@@ -187,18 +210,21 @@ entire reason loss is written <Equation tex="-\log P" /> and not just
 it answers the question *how many words is the model effectively choosing
 between?* A perplexity of 16 on a 16-word vocabulary means the model is
 choosing blindly among all of them — it knows nothing. A perplexity of 1 means
-it is certain. Our 3.49 means that, on average, the model is choosing between
-about three and a half words. Given that four words can legally follow **the
-cat**, that is roughly the truth.
+it is certain. Our **3.49 after the cat** means that, at that one context, the
+model is choosing between about three and a half words. Given that four words
+can legally follow **the cat**, that is roughly the truth. Ask it after **the cat
+drank**, where only `water` ever follows, and the number drops close to 1 — a
+perplexity is always a perplexity *somewhere*.
 
 **KL divergence** sounds like a third thing to learn, and it is not. It is the
-gap between the two numbers already on this page: **1.2506 − 1.2425 = 0.0082
-nats**. That is all KL is — *how much worse than the best possible score you
-are*. It needs no formula of its own. A KL of 0 would mean the model's
-distribution is exactly the corpus's frequencies. Ours is 0.0082 away from
-that, which is another way of saying: the claim in the previous step is not
-poetry, it is measurable, and this is the measurement. A test in this repo
-computes it on every context and fails the build if it ever exceeds 0.05.
+gap between the two numbers already on this page — the model's **1.2506** and the
+floor's **1.2425** — and that gap is **0.008184 nats**. That is all KL is: *how
+much worse than the best possible score you are*. It needs no formula of its own.
+A KL of 0 would mean the model's distribution is exactly the corpus's
+frequencies. Ours is 0.008 away from that, which is another way of saying: the
+claim in the previous step is not poetry, it is measurable, and this is the
+measurement. A test in this repo computes it on the six contexts this lesson
+leans on and fails the build if any of them exceeds 0.05.
 </Aside>
 </Step>
 
@@ -277,23 +303,41 @@ At `T = 4.0`:
 
 `quickly` **0.224** · `ate` **0.165** · `found` **0.161** · `drank` **0.158**
 
-That is very nearly a coin flip between four words. The model still knows which
-four words are legal — the cliff is far too steep for a division by four to
-flatten — but among them it has given up having an opinion. Push *T* high enough
-and every distribution converges on the same thing: uniform, perplexity 16,
-the model that knows nothing.
+Among the four legal words, that is very nearly a coin flip: the model has given
+up having an opinion about which one comes next.
+
+But add those four numbers up. They come to **0.708**. At `T = 1.0` the same four
+held **0.998**. So **29%** of the model's probability has gone somewhere else —
+onto the twelve words that never once followed **the cat** in the training data.
+`it` is now at **0.040**. `bird` is at **0.033**. Words the model had learned were
+illegal here are back on the table, and a die roll will land on one of them
+roughly once every three or four words.
+
+That is the part the word "creativity" hides. High temperature does not just
+flatten the top of the distribution. **It reopens the tail.** The cliff the last
+step made so much of — four words at 99.84%, twelve at 0.16% — is not a fact about
+the model, it is a fact about the model *at T = 1*. Divide the logits by four and
+the cliff erodes into a slope. Push *T* higher still and every distribution
+converges on the same thing: uniform, perplexity 16, the model that knows nothing.
 
 So temperature does not add creativity or subtract it. It scales how far the
-model's own scores are allowed to be from each other, in one direction or the
-other, and everything you have heard about it is downstream of that.
+model's own scores are allowed to be from each other, and everything you have
+heard about it is downstream of that — including the failure mode. What you
+actually wanted, most likely, was the top of the distribution loosened and the
+tail left shut. Temperature cannot give you that. It only has the one dial, and it
+turns both at once.
+
+Which is exactly why there is a second knob.
 </Step>
 
 <Step label="top-p">
 ## Truncating instead of reshaping
 
 The other knob you have typed does something completely different. Temperature
-*reshapes* the whole distribution. **Top-p** — nucleus sampling — leaves the
-shape alone and simply cuts it off.
+*reshapes* the whole distribution, tail and all. **Top-p** — nucleus sampling —
+leaves the shape alone and simply cuts it off. It is the knob that shuts the
+tail temperature just opened, which is why the two are almost always set
+together.
 
 Sort the words by probability, add them up from the top, and stop as soon as the
 running total reaches *p*. Keep those words, throw the rest away, and divide what
@@ -336,8 +380,10 @@ page, when we counted them by hand.
 There is nothing else. A language model reads a context, produces one number per
 word in its vocabulary, softmaxes those numbers into a distribution, and rolls a
 weighted die. Then it appends the word it drew, and does it all again. That is
-what GPT-4 is doing, on every token, forever. It has 100,000 words instead of
-sixteen and a hundred layers instead of one, and it is doing this.
+what the model behind your API key is doing, on every token, forever. Its
+vocabulary runs to tens of thousands of tokens rather than sixteen words, and it
+stacks many layers rather than one — but the last matrix, the softmax, and the
+die are these.
 
 You came here to find out what `temperature: 0.7` does.
 

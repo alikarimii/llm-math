@@ -24,13 +24,29 @@ const reveal = (p: number) => Math.min(1, Math.max(0, p) / REVEAL)
 const lerp = (a: number, b: number, p: number) => a + (b - a) * Math.min(1, Math.max(0, p))
 
 interface Ctx {
+  /** The FULL logit row — one score per word in the 16-word vocabulary. */
   logits: number[]
+  /** softmax over all sixteen. Sums to 1 across the whole vocabulary. */
   probs: number[]
+  /** Indices into the full row of the six words the figures draw, likeliest first. */
+  order: number[]
   labels: string[]
   corpus: number[]
   output: number[]
   unembed: number[][]
 }
+
+/**
+ * Take the six display words out of a full-vocabulary vector, in display order.
+ *
+ * Every transformation — softmax, temperature, top-p — runs over ALL SIXTEEN
+ * words first, and only the result is sliced for display. Slicing first and
+ * transforming after would renormalise over six words instead of sixteen, and
+ * the numbers Distribution prints would be numbers the model never produced.
+ * At T = 4 that error is enormous: `quickly` would read 0.287 where the model
+ * actually says 0.224. Slice last, always.
+ */
+const show = (c: Ctx, full: number[]): number[] => c.order.map(i => full[i])
 
 /**
  * One figure per prose step, in order, mapped POSITIONALLY onto the <Step>
@@ -48,7 +64,8 @@ interface Ctx {
  * this (it draws the masked, signed attention scores in /attention): it
  * min-max-normalises the bar HEIGHTS for display and prints no numbers, so the
  * negative logits are shown honestly, as short bars, rather than as fabricated
- * shifted values.
+ * shifted values. It is the one figure handed the six-word slice directly: it
+ * prints no probability, so nothing it draws can misstate one.
  */
 const STEP_FIGURES: ((c: Ctx, p: number) => ReactNode)[] = [
   // 0 — where /attention left off: 16 numbers that are not yet an answer.
@@ -61,53 +78,55 @@ const STEP_FIGURES: ((c: Ctx, p: number) => ReactNode)[] = [
   ),
   // 2 — logits: raw scores, meaningless alone. Held at 0: this is the BEFORE.
   c => (
-    <SoftmaxRow logits={c.logits} labels={c.labels} progress={0} />
+    <SoftmaxRow logits={show(c, c.logits)} labels={c.labels} progress={0} />
   ),
   // 3 — softmax turns them into a distribution that sums to 1. The same bars
   //     morph, in place, from scores into probabilities as the reader scrolls.
   (c, p) => (
-    <SoftmaxRow logits={c.logits} labels={c.labels} progress={reveal(p)} />
+    <SoftmaxRow logits={show(c, c.logits)} labels={c.labels} progress={reveal(p)} />
   ),
   // 4 — THE TURN: the same numbers, obtained by counting sentences.
   (c, p) => (
-    <Distribution probs={c.probs} labels={c.labels} compare={c.corpus} progress={reveal(p)} label="model (colour) vs. corpus counts (grey)" />
+    <Distribution probs={show(c, c.probs)} labels={c.labels} compare={c.corpus} progress={reveal(p)} label="model (colour) vs. corpus counts (grey)" />
   ),
   // 5 — cross-entropy and perplexity: still on the comparison, prose carries it.
   (c, p) => (
-    <Distribution probs={c.probs} labels={c.labels} compare={c.corpus} progress={reveal(p)} label="model (colour) vs. corpus counts (grey)" />
+    <Distribution probs={show(c, c.probs)} labels={c.labels} compare={c.corpus} progress={reveal(p)} label="model (colour) vs. corpus counts (grey)" />
   ),
   // 6 — the cliff: 12 of 16 words share 0.16% of the mass.
   (c, p) => (
-    <Distribution probs={c.probs} labels={c.labels} progress={reveal(p)} cutoff={4} label="the cliff — everything past the fourth word is illegal here" />
+    <Distribution probs={show(c, c.probs)} labels={c.labels} progress={reveal(p)} cutoff={4} label="the cliff — everything past the fourth word is illegal here" />
   ),
   // 7 — temperature sweeps 1.0 → 0.25 as the reader scrolls this step.
   (c, p) => {
     const t = lerp(1, 0.25, reveal(p))
     return (
       <Distribution
-        probs={softmax(temper(c.logits, t))}
+        probs={show(c, softmax(temper(c.logits, t)))}
         labels={c.labels}
         progress={1}
         label={`T = ${t.toFixed(2)} — more confident, less truthful`}
       />
     )
   },
-  // 8 — and 1.0 → 4.0 the other way.
+  // 8 — and 1.0 → 4.0 the other way. The six bars no longer sum to 1: at T = 4
+  //     nearly a third of the mass has moved onto the ten words not drawn here,
+  //     which is the point the prose makes and the reason top-p follows.
   (c, p) => {
     const t = lerp(1, 4, reveal(p))
     return (
       <Distribution
-        probs={softmax(temper(c.logits, t))}
+        probs={show(c, softmax(temper(c.logits, t)))}
         labels={c.labels}
         progress={1}
-        label={`T = ${t.toFixed(2)} — flattening toward a coin flip`}
+        label={`T = ${t.toFixed(2)} — the tail is reopening`}
       />
     )
   },
-  // 9 — top-p truncation.
+  // 9 — top-p truncation, applied to the full vocabulary and then sliced.
   (c, p) => (
     <Distribution
-      probs={topP(c.probs, 0.9)}
+      probs={show(c, topP(c.probs, 0.9))}
       labels={c.labels}
       progress={reveal(p)}
       cutoff={4}
@@ -139,8 +158,11 @@ export function ProbabilityFigure({ step, progress }: StageState) {
     const freqs = nextTokenFreqs(CONTEXT)
 
     return {
-      logits: order.map(({ i }) => logitRow[i]),
-      probs: order.map(({ i }) => probs[i]),
+      // The full rows are kept whole. `order` says which six to draw, and
+      // `show` applies that slice AFTER every transformation, never before.
+      logits: logitRow,
+      probs,
+      order: order.map(({ i }) => i),
       labels: order.map(({ word }) => word),
       corpus: order.map(({ word }) => freqs[word] ?? 0),
       output: trace.output[trace.output.length - 1],
