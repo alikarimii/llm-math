@@ -5,6 +5,7 @@ import { Matrix } from './Matrix'
 import { MatMul } from './MatMul'
 import { SoftmaxRow } from './SoftmaxRow'
 import { AttentionGrid } from './AttentionGrid'
+import { Distribution } from './Distribution'
 import { expectPureInProgress } from './test-utils'
 
 describe('figures are pure functions of progress', () => {
@@ -145,5 +146,53 @@ describe('AttentionGrid', () => {
     // The real signal: a 150x difference in mass must not collapse to the
     // same rendered opacity via an artificial floor.
     expect(smallButReal / nearZero).toBeGreaterThan(100)
+  })
+})
+
+describe('Distribution', () => {
+  const probs = [0.55, 0.16, 0.15, 0.14]
+  const labels = ['quickly', 'ate', 'found', 'drank']
+
+  it('reveals no bars at progress 0 and every bar at progress 1', () => {
+    const { container: at0 } = render(
+      <Distribution probs={probs} labels={labels} progress={0} />
+    )
+    const { container: at1 } = render(
+      <Distribution probs={probs} labels={labels} progress={1} />
+    )
+    expect(at0.querySelectorAll('[data-revealed="true"]')).toHaveLength(0)
+    expect(at1.querySelectorAll('[data-revealed="true"]')).toHaveLength(4)
+  })
+
+  it('renders one labelled bar per word', () => {
+    const { getByText } = render(
+      <Distribution probs={probs} labels={labels} progress={1} />
+    )
+    for (const w of labels) expect(getByText(w)).toBeTruthy()
+  })
+
+  it('draws a comparison series when given one', () => {
+    const { container } = render(
+      <Distribution
+        probs={probs}
+        labels={labels}
+        progress={1}
+        compare={[0.5, 1 / 6, 1 / 6, 1 / 6]}
+      />
+    )
+    expect(container.querySelectorAll('[data-series="compare"]')).toHaveLength(4)
+  })
+
+  it('marks bars beyond the cutoff as cut', () => {
+    const { container } = render(
+      <Distribution probs={probs} labels={labels} progress={1} cutoff={2} />
+    )
+    expect(container.querySelectorAll('[data-cut="true"]')).toHaveLength(2)
+  })
+
+  it('is a pure function of progress', () => {
+    expectPureInProgress(p => (
+      <Distribution probs={probs} labels={labels} progress={p} />
+    ))
   })
 })
