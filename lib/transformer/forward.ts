@@ -47,5 +47,10 @@ export function forward(tokens: string[], opts: { scale?: boolean } = {}): Forwa
   const output: Matrix = embedded.map((row, t) =>
     row.map((e, i) => e + projected[t][i]))
 
-  return { embedded, q, k, v, scores, scaled, weights, output }
+  // The step /attention stops one short of: project the residual stream back out
+  // onto the vocabulary. `unembed` is [vocab, d_model], so this yields one score
+  // per word, per position.
+  const logits = linear(output, model.unembed)
+
+  return { embedded, q, k, v, scores, scaled, weights, output, logits }
 }

@@ -1,5 +1,6 @@
 import torch, json, pathlib
 from model import TinyAttention, D_MODEL, N_HEADS, D_K, N_CTX
+from corpus import CORPUS
 
 itos = {int(k): v for k, v in json.loads(pathlib.Path("train/vocab.json").read_text()).items()}
 stoi = {v: k for k, v in itos.items()}
@@ -99,10 +100,14 @@ fixtures = {
                     for row in head] for head in t(scaled[0])],
         "weights": t(w[0]),
         "output": t(out[0]),
+        "logits": t(real_logits[0]),
     },
 }
+
+corpus = {"sentences": [s.split() for s in CORPUS]}
 
 pathlib.Path("public/model").mkdir(parents=True, exist_ok=True)
 pathlib.Path("public/model/weights.json").write_text(json.dumps(weights))
 pathlib.Path("public/model/fixtures.json").write_text(json.dumps(fixtures))
-print("\nexported weights.json + fixtures.json")
+pathlib.Path("public/model/corpus.json").write_text(json.dumps(corpus))
+print("\nexported weights.json + fixtures.json + corpus.json")

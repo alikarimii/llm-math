@@ -619,6 +619,17 @@ small { font-size: var(--text-sm); }
   margin: 0;
 }
 
+/* The drawn tokens are a running list of separate words, so they need a real
+ * gap between them: they are inline-block, which collapses the whitespace JSX
+ * would otherwise leave, and without a margin they render as one run-on string
+ * ("bread" + "purred" reading as "breadpurred"). This file defines no spacing
+ * scale, so the value is a literal, matching the other rules here. */
+.playground-note [data-draw] {
+  display: inline-block;
+  margin-right: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Hero: the causal mask triangle ──────────────────────────────────────── */
 /*
  * The one bold thing on the site. The lower-triangular attention matrix is the
@@ -860,4 +871,61 @@ pre code {
     row-gap: 0.25rem;
   }
   .spec-gloss { grid-column: 1 / -1; }
+}
+
+/* ── Figures: Distribution ────────────────────────────────────────────────── */
+/*
+ * Horizontal bars over the vocabulary. Serves all three acts of the lesson:
+ * the bare distribution, the corpus-vs-model comparison (a ghosted second
+ * series behind the model's), and top-k/top-p truncation (cut bars dimmed,
+ * not hidden — seeing what was discarded is the point).
+ */
+.distribution-rows {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.distribution-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.distribution-label { text-align: right; }
+
+.distribution-track {
+  position: relative;
+  display: block;
+  height: 1.4rem;
+}
+
+.distribution-bar,
+.distribution-bar-compare {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  display: block;
+  border-radius: 2px;
+}
+
+/* The corpus: achromatic, and behind. It is ground truth, not model output. */
+.distribution-bar-compare {
+  background: var(--rule);
+  height: 100%;
+}
+
+/* The model: the only thing here allowed to carry colour. */
+.distribution-bar {
+  background: var(--data);
+  height: 100%;
+  opacity: 0.85;
+}
+
+/* Truncated by top-k / top-p — still drawn, because seeing what was thrown
+   away is the point. */
+.distribution-row[data-cut='true'] { opacity: 0.32; }
+.distribution-row[data-cut='true'] .distribution-bar {
+  background: var(--rule);
 }

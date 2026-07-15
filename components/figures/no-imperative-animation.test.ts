@@ -73,7 +73,7 @@ const FORBIDDEN: Array<{ name: string; pattern: RegExp; why: string }> = [
 const EXEMPT = ['components/lesson/useProgress.ts']
 
 /** Source files that render, or feed, the lesson's figures. */
-const SCAN_DIRS = ['components/figures', 'components/lesson', 'app/attention']
+const SCAN_DIRS = ['components/figures', 'components/lesson', 'app/attention', 'app/probability']
 
 const sourcesIn = (dir: string): string[] =>
   readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry => {
@@ -101,12 +101,17 @@ describe('figures only animate via the central CSS transition switch', () => {
         'components/figures/Matrix.tsx',
         'components/figures/MatMul.tsx',
         'components/figures/SoftmaxRow.tsx',
+        'components/figures/Distribution.tsx',
         'components/figures/Vector.tsx',
         'components/lesson/ScrollStage.tsx',
         // The files the old, non-recursive `components/figures/*.tsx` scan
         // never looked at, though both render figures:
         'app/attention/AttentionFigure.tsx',
         'app/attention/Playground.tsx',
+        // ...and the /probability lesson, which draws figures in exactly the
+        // same two places and could escape the switch exactly as easily.
+        'app/probability/ProbabilityFigure.tsx',
+        'app/probability/Playground.tsx',
       ])
     )
   })

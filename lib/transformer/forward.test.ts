@@ -26,11 +26,16 @@ function expectClose(actual: unknown, expected: unknown, label: string) {
 describe('TypeScript forward pass matches PyTorch', () => {
   const trace = forward(fixtures.prompt)
 
-  for (const key of ['embedded', 'q', 'k', 'v', 'scores', 'scaled', 'weights', 'output'] as const) {
+  for (const key of ['embedded', 'q', 'k', 'v', 'scores', 'scaled', 'weights', 'output', 'logits'] as const) {
     it(`${key} matches the Python fixture`, () => {
       expectClose(trace[key], (fixtures.trace as Record<string, unknown>)[key], key)
     })
   }
+
+  it('logits are one score per vocabulary word, per position', () => {
+    expect(trace.logits).toHaveLength(fixtures.prompt.length)
+    for (const row of trace.logits) expect(row).toHaveLength(16)
+  })
 
   it('attention weights sum to 1 across each unmasked row', () => {
     for (const head of trace.weights) {
