@@ -104,6 +104,63 @@ public/model/         exported weights, fixtures, and corpus
 train/                PyTorch model, training, and export scripts
 ```
 
+## Glossary
+
+The specialized terms used above and in the lessons. The lessons themselves
+define each one in plain language at first use; this is the quick reference.
+
+**Model anatomy**
+
+- **Token** — one input/output unit. Here a token is a whole word (the vocab is
+  words, not subword pieces).
+- **Vocabulary** — the fixed set of tokens the model knows; here the 16 words in
+  `train/vocab.json`.
+- **Embedding** — the vector of numbers that stands in for a token. Here 16
+  numbers per token.
+- **`d_model`** — the width of those vectors (16).
+- **Position embedding** — extra numbers added to an embedding so the model
+  knows *where* in the sequence the token sits.
+- **Context (`n_ctx`)** — how many tokens the model can see at once (6 here).
+- **Q / K / V (query, key, value)** — three different linear projections of each
+  token's vector. Attention compares queries against keys to decide how much of
+  each value to mix in.
+- **Attention / self-attention** — the step where each token looks back at
+  earlier tokens and pulls in a weighted blend of their values.
+- **Head / multi-head** — a parallel slice of attention over part of the vector
+  (2 heads × 8 numbers here), letting the model attend for several reasons at
+  once. See the longer explanation in *How it works*.
+- **Causal mask** — the rule that forces each token to look only at itself and
+  earlier tokens, never the future.
+- **Residual stream** — the running vector each token carries through the model;
+  each sub-layer adds its output back into it.
+- **Weights** — the learned matrices that define the model; the numbers training
+  adjusts.
+- **Forward pass** — running inputs through all the model's math once to get
+  outputs.
+
+**Turning vectors into words**
+
+- **Unembed** — the final matrix that turns a token's vector back into one score
+  per vocabulary word.
+- **Logits** — those raw, unnormalized per-word scores.
+- **Softmax** — turns a row of logits into probabilities that sum to 1.
+- **Probability distribution** — the resulting per-word odds for the next token.
+- **Temperature** — a number the logits are divided by before softmax; below 1
+  sharpens the distribution, above 1 flattens it.
+- **Sampling** — drawing the next word at random according to the distribution.
+- **Top-k / top-p (nucleus)** — restrict sampling to the *k* most likely words,
+  or to the smallest set of words whose probabilities sum to *p*.
+
+**Measuring the distribution**
+
+- **Cross-entropy** — the training loss: how surprised the model is by the true
+  next word.
+- **Perplexity** — `exp(cross-entropy)`; read as "the effective number of words
+  the model is choosing between."
+- **KL divergence** — how far one distribution is from another. The
+  `/probability` lesson uses it to show the model's odds match the corpus
+  frequencies.
+
 ## A note on the tests
 
 The suite does more than check that functions return the right thing — several
