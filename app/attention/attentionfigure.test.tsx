@@ -86,6 +86,10 @@ describe('the lesson stage, end to end', () => {
   afterEach(() => vi.restoreAllMocks())
 
   const VH = 800
+  // A step goes live when its top crosses 0.35 of the way down the viewport (its
+  // sticky prose has settled into the reading area by then), not the viewport
+  // top. So step k is active at local progress δ when scrolled = k − 0.35 + δ.
+  const TRIGGER_FRACTION = 0.35
 
   function renderAtScroll(scrolledViewports: number) {
     vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(VH)
@@ -116,14 +120,17 @@ describe('the lesson stage, end to end', () => {
     expect(renderAtScroll(5).querySelectorAll('[data-role="att-cell"]')).toHaveLength(0)
   })
 
-  it('starts the grid empty exactly when step 6 fills the viewport', () => {
-    const cells = [...renderAtScroll(6).querySelectorAll('[data-role="att-cell"]')]
+  it('starts the grid empty exactly when step 6 goes live', () => {
+    // Just past step 6's trigger line (local progress ≈ 0.01): the grid exists
+    // but no row has revealed yet.
+    const cells = [...renderAtScroll(6 - TRIGGER_FRACTION + 0.01).querySelectorAll('[data-role="att-cell"]')]
     expect(cells).toHaveLength(36)
     expect(cells.filter(c => Number(getComputedStyle(c).opacity) === 1)).toHaveLength(0)
   })
 
-  it('finishes the grid exactly as step 7 arrives — the reveal happens under step 6', () => {
-    const cells = [...renderAtScroll(6.99).querySelectorAll('[data-role="att-cell"]')]
+  it('finishes the grid before step 7 takes over — the reveal happens under step 6', () => {
+    // Just before step 7's trigger line (local progress ≈ 0.99): every row is up.
+    const cells = [...renderAtScroll(7 - TRIGGER_FRACTION - 0.01).querySelectorAll('[data-role="att-cell"]')]
     expect(cells.filter(c => Number(getComputedStyle(c).opacity) === 1)).toHaveLength(36)
   })
 })

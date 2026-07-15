@@ -5,32 +5,36 @@ import { ScrollStage, type StageState } from './ScrollStage'
 import { Step } from './Step'
 
 const VH = 500
+// A step goes live when its top crosses this line — 0.35 of the way down the
+// viewport, not the viewport top — because its sticky prose settles into the
+// reading area there. Every case below is stated relative to it.
+const TRIGGER = 0.35 * VH
 const step = (top: number, height = VH) => ({ top, height })
 
 describe('stageState maps measured steps to (step, local progress)', () => {
   // Layout under test: N steps of one viewport each, stacked. Step k's top is
-  // k*VH - scrolled. A step is "on screen" from the moment its top reaches the
-  // viewport top until the next step's does.
+  // k*VH - scrolled. A step is "on screen" from the moment its top crosses the
+  // trigger line until the next step's does.
 
   it('is (0, 0) before the stage has been reached', () => {
-    expect(stageState([step(VH), step(2 * VH), step(3 * VH)])).toEqual({ step: 0, progress: 0 })
+    expect(stageState([step(VH), step(2 * VH), step(3 * VH)], VH)).toEqual({ step: 0, progress: 0 })
   })
 
-  it('is (k, 0) exactly when step k fills the viewport', () => {
-    // scrolled = 2*VH: step 2's top is 0.
-    expect(stageState([step(-2 * VH), step(-VH), step(0), step(VH)]))
+  it('is (k, 0) exactly when step k crosses the trigger line', () => {
+    // step 2's top sits exactly on the trigger line.
+    expect(stageState([step(TRIGGER - 2 * VH), step(TRIGGER - VH), step(TRIGGER), step(TRIGGER + VH)], VH))
       .toEqual({ step: 2, progress: 0 })
   })
 
   it('runs local progress 0 -> 1 across the step that is on screen', () => {
-    // Halfway through step 1: its top is -VH/2.
-    expect(stageState([step(-1.5 * VH), step(-0.5 * VH), step(0.5 * VH)]))
+    // Halfway through step 1: its top is half a viewport past the trigger line.
+    expect(stageState([step(TRIGGER - 1.5 * VH), step(TRIGGER - 0.5 * VH), step(TRIGGER + 0.5 * VH)], VH))
       .toEqual({ step: 1, progress: 0.5 })
   })
 
   it('hands off at exactly the moment the next step arrives (no gap, no overlap)', () => {
-    const before = stageState([step(-VH + 1), step(1)])   // step 0, almost done
-    const after = stageState([step(-VH), step(0)])        // step 1, just arrived
+    const before = stageState([step(TRIGGER - VH + 1), step(TRIGGER + 1)], VH)   // step 0, almost done
+    const after = stageState([step(TRIGGER - VH), step(TRIGGER)], VH)            // step 1, just arrived
     expect(before.step).toBe(0)
     expect(before.progress).toBeCloseTo(1, 2)
     expect(after).toEqual({ step: 1, progress: 0 })
@@ -40,29 +44,29 @@ describe('stageState maps measured steps to (step, local progress)', () => {
     // This is the regression the whole redesign exists for: the final step's
     // figure must be able to reach progress 1, not be frozen mid-reveal (or,
     // as before, be fully revealed a step early).
-    expect(stageState([step(-2 * VH), step(-VH)])).toEqual({ step: 1, progress: 1 })
+    expect(stageState([step(TRIGGER - 2 * VH), step(TRIGGER - VH)], VH)).toEqual({ step: 1, progress: 1 })
   })
 
   it('clamps past the end of the stage instead of running past 1', () => {
-    expect(stageState([step(-99 * VH), step(-98 * VH)])).toEqual({ step: 1, progress: 1 })
+    expect(stageState([step(TRIGGER - 99 * VH), step(TRIGGER - 98 * VH)], VH)).toEqual({ step: 1, progress: 1 })
   })
 
   it('handles a single-step stage', () => {
-    expect(stageState([step(0)])).toEqual({ step: 0, progress: 0 })
-    expect(stageState([step(-VH / 4)])).toEqual({ step: 0, progress: 0.25 })
-    expect(stageState([step(-VH)])).toEqual({ step: 0, progress: 1 })
+    expect(stageState([step(TRIGGER)], VH)).toEqual({ step: 0, progress: 0 })
+    expect(stageState([step(TRIGGER - VH / 4)], VH)).toEqual({ step: 0, progress: 0.25 })
+    expect(stageState([step(TRIGGER - VH)], VH)).toEqual({ step: 0, progress: 1 })
   })
 
   it('handles a stage with no steps at all', () => {
-    expect(stageState([])).toEqual({ step: 0, progress: 0 })
+    expect(stageState([], VH)).toEqual({ step: 0, progress: 0 })
   })
 
   it('never produces NaN or Infinity, even for zero-height or short steps', () => {
     const cases = [
-      stageState([{ top: 0, height: 0 }]),
-      stageState([{ top: 10, height: 0 }]),
-      stageState([step(0, 10), step(10, 10)]),       // stage far shorter than viewport
-      stageState([step(-5, 10), step(5, 10)]),
+      stageState([{ top: 0, height: 0 }], VH),
+      stageState([{ top: 10, height: 0 }], VH),
+      stageState([step(0, 10), step(10, 10)], VH),       // stage far shorter than viewport
+      stageState([step(-5, 10), step(5, 10)], VH),
     ]
     for (const s of cases) {
       expect(Number.isFinite(s.progress)).toBe(true)
@@ -115,19 +119,19 @@ describe('ScrollStage feeds the figure the real, measured stage state', () => {
 
   it('reports the step that is actually on screen, not a scaled global scalar', () => {
     // Three steps; the reader is halfway through the middle one.
-    expect(renderStage([step(-1.5 * VH), step(-0.5 * VH), step(0.5 * VH)], 3))
+    expect(renderStage([step(TRIGGER - 1.5 * VH), step(TRIGGER - 0.5 * VH), step(TRIGGER + 0.5 * VH)], 3))
       .toEqual({ step: 1, progress: 0.5 })
   })
 
   it('passes real scroll-derived progress, not a forced 1', () => {
-    const state = renderStage([step(-VH / 4), step(0.75 * VH)], 2)
+    const state = renderStage([step(TRIGGER - VH / 4), step(TRIGGER + 0.75 * VH)], 2)
     expect(state.progress).toBeCloseTo(0.25)
     expect(state.progress).not.toBe(1)
   })
 
   it('agrees exactly with the pure mapping it delegates to', () => {
-    const rects = [step(-2 * VH), step(-VH), step(0)]
-    expect(renderStage(rects, 3)).toEqual(stageState(rects))
+    const rects = [step(TRIGGER - 2 * VH), step(TRIGGER - VH), step(TRIGGER)]
+    expect(renderStage(rects, 3)).toEqual(stageState(rects, VH))
   })
 })
 
@@ -194,7 +198,7 @@ describe('the stage affords one viewport of scroll per step — including the la
       .filter(r => r.isStep)
       .map(r => ({ top: r.top - maxScroll, height: r.height }))
 
-    return stageState(stepRects)
+    return stageState(stepRects, VH)
   }
 
   it('scrolls one full viewport past the last step, so its figure reaches progress 1', () => {
