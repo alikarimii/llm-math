@@ -1,5 +1,7 @@
 # llm_math
 
+**Live demo: https://llm-math.llmmath.workers.dev/**
+
 Scroll-driven lessons on the math behind large language models — built around a
 **real transformer that we actually trained**, not a diagram of one.
 
